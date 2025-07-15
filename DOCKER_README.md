@@ -5,7 +5,7 @@ Questa guida spiega come deployare la webapp Petrolis usando Docker.
 ## Prerequisiti
 
 - Docker installato
-- Docker Compose installato
+- Docker Compose plugin installato
 - File `.env.local` configurato con le variabili d'ambiente necessarie
 
 ## File di Configurazione
@@ -31,10 +31,10 @@ NEXT_PUBLIC_BASE_URL=https://your-domain.com
 
 ```bash
 # Avvia solo l'app Next.js
-docker-compose up -d
+docker compose up -d
 
 # Avvia con NGINX reverse proxy
-docker-compose --profile with-nginx up -d
+docker compose --profile with-nginx up -d
 ```
 
 ### 2. Docker diretto
@@ -88,12 +88,12 @@ Se usi il profilo `with-nginx`:
 
 ### Controllo stato
 ```bash
-docker-compose ps
+docker compose ps
 ```
 
 ### Logs
 ```bash
-docker-compose logs -f petrolis-webapp
+docker compose logs -f petrolis-webapp
 ```
 
 ### Health check
@@ -105,14 +105,18 @@ curl http://localhost:3000/api/health
 
 ### Problemi comuni:
 
-1. **Errore "File is not defined":**
+1. **Errore `docker: 'compose' is not a docker command.`:**
+   - Significa che il plugin Docker Compose non è installato.
+   - Installalo con: `sudo apt-get update && sudo apt-get install docker-compose-plugin`
+
+2. **Errore "File is not defined":**
    - Assicurati che il codice sia aggiornato con le modifiche per il supporto base64
 
-2. **Errori di variabili d'ambiente:**
+3. **Errori di variabili d'ambiente:**
    - Verifica che `.env.local` sia presente e corretto
    - Controlla che tutte le variabili richieste siano impostate
 
-3. **Problemi di connessione:**
+4. **Problemi di connessione:**
    - Verifica che le porte non siano già in uso
    - Controlla i firewall
 
@@ -120,9 +124,9 @@ curl http://localhost:3000/api/health
 
 ```bash
 # Rebuild completo
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
+docker compose down
+docker compose build --no-cache
+docker compose up -d
 
 # Pulizia completa
 docker system prune -a
@@ -137,10 +141,10 @@ docker exec -it petrolis-webapp_petrolis-webapp_1 /bin/sh
 ### Con NGINX:
 1. Configura i certificati SSL
 2. Aggiorna `nginx.conf` con il tuo dominio
-3. Avvia con: `docker-compose --profile with-nginx up -d`
+3. Avvia con: `docker compose --profile with-nginx up -d`
 
 ### Senza NGINX:
-1. Avvia con: `docker-compose up -d`
+1. Avvia con: `docker compose up -d`
 2. Configura un reverse proxy esterno (es. Cloudflare, AWS ALB)
 
 ## Aggiornamenti

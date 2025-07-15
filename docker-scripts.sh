@@ -20,41 +20,41 @@ case "$1" in
     
     "compose-up")
         echo "Starting with Docker Compose..."
-        docker-compose up -d
+        docker compose up -d
         ;;
     
     "compose-up-nginx")
         echo "Starting with Docker Compose (including NGINX)..."
-        docker-compose --profile with-nginx up -d
+        docker compose --profile with-nginx up -d
         ;;
     
     "compose-down")
         echo "Stopping Docker Compose..."
-        docker-compose down
+        docker compose down
         ;;
     
     "logs")
         echo "Showing logs..."
-        docker-compose logs -f petrolis-webapp
+        docker compose logs -f petrolis-webapp
         ;;
     
     "rebuild")
         echo "Rebuilding and restarting..."
-        docker-compose down
-        docker-compose build --no-cache
-        docker-compose up -d
+        docker compose down
+        docker compose build --no-cache
+        docker compose up -d
         ;;
     
     "clean")
         echo "Cleaning up Docker resources..."
-        docker-compose down
+        docker compose down
         docker system prune -f
         docker image prune -f
         ;;
     
     "health")
         echo "Checking health status..."
-        docker-compose ps
+        docker compose ps
         curl -f http://localhost:3000/api/health || echo "Health check failed"
         ;;
     
