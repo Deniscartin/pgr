@@ -8,16 +8,28 @@ const openai = new OpenAI({
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const imageFile = formData.get('image') as File | null;
+    const contentType = req.headers.get('content-type');
+    let base64Image: string;
+    let mimeType: string;
 
-    if (!imageFile) {
-      return NextResponse.json({ error: 'No image file provided' }, { status: 400 });
+    if (contentType?.includes('application/json')) {
+      // Handle JSON request (from server-to-server calls)
+      const { image, mimeType: requestMimeType } = await req.json();
+      base64Image = image;
+      mimeType = requestMimeType || 'image/jpeg';
+    } else {
+      // Handle FormData request (from direct client calls)
+      const formData = await req.formData();
+      const imageFile = formData.get('image') as File | null;
+
+      if (!imageFile) {
+        return NextResponse.json({ error: 'No image file provided' }, { status: 400 });
+      }
+
+      const imageBuffer = await imageFile.arrayBuffer();
+      base64Image = Buffer.from(imageBuffer).toString('base64');
+      mimeType = imageFile.type;
     }
-
-    const imageBuffer = await imageFile.arrayBuffer();
-    const base64Image = Buffer.from(imageBuffer).toString('base64');
-    const mimeType = imageFile.type;
 
     const prompt = `
       You are an expert data extractor. Analyze the provided image, which is an e-DAS shipping document, and extract the information in JSON format.

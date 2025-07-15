@@ -35,14 +35,16 @@ export async function POST(request: NextRequest) {
 
     console.log(`Inizio processamento documenti per trip ${tripId}`);
 
-    // Helper function to download image from URL and convert to File
-    const downloadImageAsFile = async (imageUrl: string, fileName: string): Promise<File> => {
+    // Helper function to download image and convert to base64
+    const downloadImageAsBase64 = async (imageUrl: string): Promise<{ base64: string; mimeType: string }> => {
       const response = await fetch(imageUrl);
       if (!response.ok) {
         throw new Error(`Failed to download image: ${response.statusText}`);
       }
-      const blob = await response.blob();
-      return new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+      const buffer = await response.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString('base64');
+      const mimeType = response.headers.get('content-type') || 'image/jpeg';
+      return { base64, mimeType };
     };
 
     // Processa l'e-DAS
@@ -51,15 +53,19 @@ export async function POST(request: NextRequest) {
     try {
       console.log('Processamento e-DAS...');
       
-      // Download image and create FormData
-      const edasFile = await downloadImageAsFile(edasImageUrl, 'edas.jpg');
-      const edasFormData = new FormData();
-      edasFormData.append('image', edasFile);
+      // Download image and convert to base64
+      const { base64, mimeType } = await downloadImageAsBase64(edasImageUrl);
       
-      // Call existing parse-edas endpoint
+      // Call existing parse-edas endpoint with base64 data
       const edasResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/parse-edas`, {
         method: 'POST',
-        body: edasFormData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image: base64,
+          mimeType: mimeType
+        }),
       });
       
       if (edasResponse.ok) {
@@ -79,15 +85,19 @@ export async function POST(request: NextRequest) {
     try {
       console.log('Processamento Nota di Carico...');
       
-      // Download image and create FormData
-      const loadingNoteFile = await downloadImageAsFile(loadingNoteImageUrl, 'loading-note.jpg');
-      const loadingNoteFormData = new FormData();
-      loadingNoteFormData.append('image', loadingNoteFile);
+      // Download image and convert to base64
+      const { base64, mimeType } = await downloadImageAsBase64(loadingNoteImageUrl);
       
-      // Call existing parse-loading-note endpoint
+      // Call existing parse-loading-note endpoint with base64 data
       const loadingNoteResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/parse-loading-note`, {
         method: 'POST',
-        body: loadingNoteFormData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image: base64,
+          mimeType: mimeType
+        }),
       });
       
       if (loadingNoteResponse.ok) {
