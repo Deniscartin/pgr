@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { doc, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ParsedEDASData, ParsedLoadingNoteData, ValidationResult } from '@/lib/types';
+import { parseEdas, parseLoadingNote } from '@/lib/documentParsers';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,28 +15,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verifica che il trip esista e sia in status 'elaborazione'
     const tripRef = doc(db, 'trips', tripId);
     const tripDoc = await getDoc(tripRef);
     
-    if (!tripDoc.exists()) {
+    if (!tripDoc.exists() || tripDoc.data().status !== 'elaborazione') {
       return NextResponse.json(
-        { error: 'Viaggio non trovato' },
-        { status: 404 }
-      );
-    }
-
-    const tripData = tripDoc.data();
-    if (tripData.status !== 'elaborazione') {
-      return NextResponse.json(
-        { error: 'Il viaggio non è in stato di elaborazione' },
+        { error: 'Viaggio non trovato o non in stato di elaborazione' },
         { status: 400 }
       );
     }
 
     console.log(`Inizio processamento documenti per trip ${tripId}`);
 
-    // Helper function to download image and convert to base64
     const downloadImageAsBase64 = async (imageUrl: string): Promise<{ base64: string; mimeType: string }> => {
       const response = await fetch(imageUrl);
       if (!response.ok) {
@@ -49,63 +40,22 @@ export async function POST(request: NextRequest) {
 
     // Processa l'e-DAS
     let edasData: ParsedEDASData | null = null;
-    
     try {
       console.log('Processamento e-DAS...');
-      
-      // Download image and convert to base64
       const { base64, mimeType } = await downloadImageAsBase64(edasImageUrl);
-      
-      // Call existing parse-edas endpoint with base64 data
-      const edasResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/parse-edas`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          image: base64,
-          mimeType: mimeType
-        }),
-      });
-      
-      if (edasResponse.ok) {
-        edasData = await edasResponse.json() as ParsedEDASData;
-        console.log('e-DAS processato con successo');
-      } else {
-        throw new Error(`e-DAS parsing failed: ${edasResponse.statusText}`);
-      }
+      edasData = await parseEdas(base64, mimeType);
+      console.log('e-DAS processato con successo');
     } catch (error) {
       console.error('Errore nel processamento e-DAS:', error);
-      // Continua comunque con la nota di carico
     }
 
     // Processa la Nota di Carico
     let loadingNoteData: ParsedLoadingNoteData | null = null;
-    
     try {
       console.log('Processamento Nota di Carico...');
-      
-      // Download image and convert to base64
       const { base64, mimeType } = await downloadImageAsBase64(loadingNoteImageUrl);
-      
-      // Call existing parse-loading-note endpoint with base64 data
-      const loadingNoteResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/parse-loading-note`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          image: base64,
-          mimeType: mimeType
-        }),
-      });
-      
-      if (loadingNoteResponse.ok) {
-        loadingNoteData = await loadingNoteResponse.json() as ParsedLoadingNoteData;
-        console.log('Nota di Carico processata con successo');
-      } else {
-        throw new Error(`Loading note parsing failed: ${loadingNoteResponse.statusText}`);
-      }
+      loadingNoteData = await parseLoadingNote(base64, mimeType);
+      console.log('Nota di Carico processata con successo');
     } catch (error) {
       console.error('Errore nel processamento Nota di Carico:', error);
     }
@@ -114,7 +64,7 @@ export async function POST(request: NextRequest) {
     if (edasData) {
       try {
         console.log('Aggiornamento ordine con dati e-DAS...');
-        const orderRef = doc(db, 'orders', tripData.orderId);
+        const orderRef = doc(db, 'orders', tripDoc.data().orderId);
         const orderUpdateData = {
           orderNumber: edasData.documentInfo.dasNumber,
           product: edasData.productInfo.description,
