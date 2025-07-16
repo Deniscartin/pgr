@@ -216,13 +216,13 @@ export default function DriverDashboard() {
             Scansione Viaggio
           </button>
 
-          <button
+          {/* <button
             onClick={() => setShowQRCode(true)}
             className="w-full flex items-center justify-center px-4 py-3 bg-green-600 text-white rounded-xl font-medium shadow-sm hover:bg-green-700 active:bg-green-800"
           >
             <QrCode className="w-5 h-5 mr-2" />
             Mostra il mio QR Code
-          </button>
+          </button> */}
           
           <button
             onClick={() => setShowPastTrips(true)}
