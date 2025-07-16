@@ -187,13 +187,13 @@ export default function DriverDashboard() {
               <p className="text-sm text-gray-600">Ciao, {userProfile?.name}</p>
             </div>
             <div className="flex items-center space-x-2">
-              <button
+              {/* <button
                 onClick={() => setShowQRCode(true)}
                 className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
                 title="Mostra QR Code"
               >
                 <QrCode className="w-5 h-5" />
-              </button>
+              </button> */}
               <button
                 onClick={logout}
                 className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
@@ -213,7 +213,7 @@ export default function DriverDashboard() {
             className="w-full flex items-center justify-center px-4 py-3 bg-indigo-600 text-white rounded-xl font-medium shadow-sm hover:bg-indigo-700 active:bg-indigo-800"
           >
             <Plus className="w-5 h-5 mr-2" />
-            Avvia Nuovo Viaggio
+            Scansione Viaggio
           </button>
 
           <button
