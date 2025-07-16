@@ -19,6 +19,9 @@ import CreateOperatorModal from './CreateOperatorModal';
 import AssignTripModal from './AssignTripModal';
 import ManageOrderModal from './ManageOrderModal';
 import ImageViewerModal from './ImageViewerModal';
+import TripsTable from './TripsTable';
+import TripDetailModal from './TripDetailModal';
+import * as XLSX from 'xlsx';
 
 export default function AdminDashboard() {
   const { userProfile, logout } = useAuth();
@@ -34,6 +37,7 @@ export default function AdminDashboard() {
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
+  const [selectedTripForDetail, setSelectedTripForDetail] = useState<Trip | null>(null);
 
   const completedTrips = trips.filter(trip => trip.status === 'completato');
   const pendingTrips = trips.filter(trip => trip.status !== 'completato');
@@ -41,6 +45,14 @@ export default function AdminDashboard() {
   const handleViewImages = (trip: Trip) => {
     setSelectedTrip(trip);
     setShowImageViewer(true);
+  };
+
+  const handleViewTripDetails = (trip: Trip) => {
+    setSelectedTripForDetail(trip);
+  };
+
+  const handleCloseDetailModal = () => {
+    setSelectedTripForDetail(null);
   };
 
   if (ordersLoading || tripsLoading || driversLoading) {
@@ -183,33 +195,41 @@ export default function AdminDashboard() {
           </button>
           <button
             onClick={() => {
-              // Simple export with available trip data  
               const dataToExport = trips.map(trip => {
-                let dateString = 'N/A';
+                let dateString = '';
                 if (trip.createdAt) {
                   try {
-                    // Handle both Firestore Timestamp and Date objects
                     const date = trip.createdAt instanceof Date ? trip.createdAt : new Date(trip.createdAt);
-                    dateString = date.toLocaleDateString();
+                    dateString = date.toLocaleDateString('it-IT');
                   } catch {
                     dateString = 'N/A';
                   }
                 }
                 
                 return {
-                  'ID': trip.id,
-                  'Autista': trip.driverName,
+                  'ID Viaggio': trip.id,
                   'Stato': trip.status,
+                  'Autista': trip.driverName,
+                  'Codice DAS': trip.dasCode || 'N/A',
                   'Data Creazione': dateString,
-                  'Note di Carico': trip.loadingNoteImageUrl ? 'Presente' : 'Non presente',
-                  'Cartello Conta Litro': trip.cartelloCounterImageUrl ? 'Presente' : 'Non presente',
+                  'Numero DAS EDAS': trip.edasData?.documentInfo?.dasNumber || 'N/A',
+                  'Numero Fattura EDAS': trip.edasData?.documentInfo?.invoiceNumber || 'N/A',
+                  'Data Spedizione EDAS': trip.edasData?.documentInfo?.shippingDateTime || 'N/A',
+                  'Nome Mittente EDAS': trip.edasData?.senderInfo?.name || 'N/A',
+                  'Nome Destinatario EDAS': trip.edasData?.recipientInfo?.name || 'N/A',
+                  'Descrizione Prodotto EDAS': trip.edasData?.productInfo?.description || 'N/A',
+                  'Peso Netto EDAS (kg)': trip.edasData?.productInfo?.netWeightKg || 'N/A',
+                  'Nome Vettore Bolla': trip.loadingNoteData?.carrierName || 'N/A',
+                  'Data Carico Bolla': trip.loadingNoteData?.loadingDate || 'N/A',
+                  'Peso Netto Bolla (kg)': trip.loadingNoteData?.netWeightKg || 'N/A',
+                  'Volume Bolla (L)': trip.loadingNoteData?.volumeLiters || 'N/A',
                 };
               });
-              
-              // Use a generic export function or implement a simple one
-              console.log('Exporting data:', dataToExport);
-              // For now, just log the data. You can implement actual Excel export later
-              alert(`Preparazione export di ${dataToExport.length} viaggi completata. Controlla la console.`);
+
+              const ws = XLSX.utils.json_to_sheet(dataToExport);
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, "Viaggi");
+              XLSX.writeFile(wb, "report_viaggi.xlsx");
             }}
             className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
           >
@@ -218,50 +238,12 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        {/* Simple trips list for now */}
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">Viaggi Recenti</h3>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">Lista dei viaggi più recenti</p>
-          </div>
-          <div className="border-t border-gray-200">
-            {trips.length === 0 ? (
-              <div className="px-4 py-8 text-center">
-                <p className="text-gray-500">Nessun viaggio trovato</p>
-              </div>
-            ) : (
-              <ul className="divide-y divide-gray-200">
-                {trips.slice(0, 10).map((trip) => {
-                  const order = orders.find(o => o.id === trip.orderId);
-                  return (
-                    <li key={trip.id} className="px-4 py-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {trip.driverName} - {order?.orderNumber || 'N/A'}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            Status: {trip.status} | Cliente: {order?.customerName || 'N/A'}
-                          </p>
-                        </div>
-                        <div className="flex space-x-2">
-                          {(trip.edasImageUrl || trip.loadingNoteImageUrl || trip.cartelloCounterImageUrl) && (
-                            <button
-                              onClick={() => handleViewImages(trip)}
-                              className="text-indigo-600 hover:text-indigo-900 text-sm"
-                            >
-                              Visualizza
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </div>
+        {/* Trips Table */}
+        <TripsTable 
+          trips={trips} 
+          orders={orders} 
+          onViewDetails={handleViewTripDetails} 
+        />
       </main>
 
       {/* Modals */}
@@ -317,6 +299,18 @@ export default function AdminDashboard() {
           }}
         />
       )}
+
+      {/* Trip Detail Modal */}
+      <TripDetailModal
+        isOpen={!!selectedTripForDetail}
+        onClose={handleCloseDetailModal}
+        trip={selectedTripForDetail}
+        order={selectedTripForDetail ? orders.find(o => o.id === selectedTripForDetail.orderId) || null : null}
+        onViewImages={(trip) => {
+          handleCloseDetailModal();
+          handleViewImages(trip);
+        }}
+      />
     </div>
   );
 } 
