@@ -28,14 +28,51 @@ export async function POST(request: NextRequest) {
     console.log(`Inizio processamento documenti per trip ${tripId}`);
 
     const downloadImageAsBase64 = async (imageUrl: string): Promise<{ base64: string; mimeType: string }> => {
-      const response = await fetch(imageUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to download image: ${response.statusText}`);
+      try {
+        // Prova prima con fetch diretto (funziona localmente)
+        const response = await fetch(imageUrl, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; Petrolis/1.0)',
+          },
+        });
+        
+        if (response.ok) {
+          const buffer = await response.arrayBuffer();
+          const base64 = Buffer.from(buffer).toString('base64');
+          const mimeType = response.headers.get('content-type') || 'image/jpeg';
+          return { base64, mimeType };
+        }
+        
+        throw new Error(`Fetch failed: ${response.statusText}`);
+      } catch (fetchError) {
+        console.warn('Direct fetch failed, trying alternative approach:', fetchError);
+        
+        // Approccio alternativo: estrai il path dall'URL e usa Firebase Storage
+        try {
+          const { imageStorage } = await import('@/lib/firebase');
+          const { ref, getDownloadURL, getBytes } = await import('firebase/storage');
+          
+          // Estrai il path del file dall'URL Firebase
+          const url = new URL(imageUrl);
+          const pathMatch = url.pathname.match(/\/o\/(.+?)\?/);
+          
+          if (!pathMatch) {
+            throw new Error('Cannot extract file path from Firebase URL');
+          }
+          
+          const filePath = decodeURIComponent(pathMatch[1]);
+          const fileRef = ref(imageStorage, filePath);
+          
+          const bytes = await getBytes(fileRef);
+          const base64 = Buffer.from(bytes).toString('base64');
+          
+          return { base64, mimeType: 'image/jpeg' };
+        } catch (firebaseError) {
+          console.error('Firebase download also failed:', firebaseError);
+          throw new Error(`Failed to download image: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
+        }
       }
-      const buffer = await response.arrayBuffer();
-      const base64 = Buffer.from(buffer).toString('base64');
-      const mimeType = response.headers.get('content-type') || 'image/jpeg';
-      return { base64, mimeType };
     };
 
     // Processa l'e-DAS
