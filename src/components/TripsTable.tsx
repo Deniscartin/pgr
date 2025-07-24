@@ -2,15 +2,16 @@
 
 import { useState, useMemo } from 'react';
 import { Trip, Order } from '@/lib/types';
-import { Search, ChevronLeft, ChevronRight, Filter, Calendar, User, FileText } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Filter, Calendar, User, FileText, Trash2 } from 'lucide-react';
 
 interface TripsTableProps {
   trips: Trip[];
   orders: Order[];
   onViewDetails: (trip: Trip) => void;
+  onDeleteTrip?: (trip: Trip) => void;
 }
 
-export default function TripsTable({ trips, orders, onViewDetails }: TripsTableProps) {
+export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip }: TripsTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [driverFilter, setDriverFilter] = useState('all');
@@ -296,12 +297,26 @@ export default function TripsTable({ trips, orders, onViewDetails }: TripsTableP
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); onViewDetails(trip); }} 
-                        className="text-indigo-600 hover:text-indigo-900"
-                      >
-                        Dettagli
-                      </button>
+                      <div className="flex items-center justify-end space-x-2">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); onViewDetails(trip); }} 
+                          className="text-indigo-600 hover:text-indigo-900"
+                        >
+                          Dettagli
+                        </button>
+                        {onDeleteTrip && (
+                          <button 
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              onDeleteTrip(trip); 
+                            }} 
+                            className="text-red-600 hover:text-red-900 ml-2"
+                            title="Elimina viaggio e ordine"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

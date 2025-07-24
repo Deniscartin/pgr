@@ -40,3 +40,5 @@ ENV PORT 3000
 
 # Avvia il server Node.js di Next.js
 CMD ["node", "server.js"] 
+
+

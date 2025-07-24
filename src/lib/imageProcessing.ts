@@ -242,11 +242,13 @@ export const preprocessDocumentImage = async (file: File, enhance: boolean = tru
 };
 
 /**
- * Uploads processed image to ImgBB (free image hosting service)
+ * Uploads processed image to Google Cloud Storage via Firebase
  * Now includes automatic document preprocessing
  */
 export const uploadImageToCloud = async (file: File, enablePreprocessing: boolean = true): Promise<string> => {
-  const API_KEY = process.env.NEXT_PUBLIC_IMGBB_API_KEY || 'your-imgbb-api-key';
+  // Importa Firebase Storage dedicato alle immagini dinamicamente per evitare errori SSR
+  const { imageStorage } = await import('@/lib/firebase');
+  const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
   
   try {
     // Applica preprocessing automatico se abilitato
@@ -256,29 +258,25 @@ export const uploadImageToCloud = async (file: File, enablePreprocessing: boolea
       fileToUpload = await preprocessDocumentImage(file, true);
     }
     
-    const formData = new FormData();
-    formData.append('image', fileToUpload);
-    formData.append('key', API_KEY);
+    // Genera un nome file unico con timestamp
+    const timestamp = Date.now();
+    const fileName = `documents/${timestamp}_${fileToUpload.name}`;
     
-    const response = await fetch('https://api.imgbb.com/1/upload', {
-      method: 'POST',
-      body: formData,
-    });
+    // Crea un riferimento al file in Firebase Storage dedicato alle immagini
+    const storageRef = ref(imageStorage, fileName);
     
-    if (!response.ok) {
-      throw new Error('Failed to upload image to cloud storage');
-    }
+    // Carica il file
+    console.log('📤 Uploading to Google Cloud Storage...');
+    const snapshot = await uploadBytes(storageRef, fileToUpload);
     
-    const result = await response.json();
+    // Ottieni l'URL di download
+    const downloadURL = await getDownloadURL(snapshot.ref);
     
-    if (result.success) {
-      console.log('✅ Image uploaded successfully:', result.data.url);
-      return result.data.url;
-    } else {
-      throw new Error('Image upload failed: ' + result.error?.message);
-    }
+    console.log('✅ Image uploaded successfully to Google Cloud Storage:', downloadURL);
+    return downloadURL;
+    
   } catch (error) {
-    console.error('Cloud upload error:', error);
+    console.error('Google Cloud Storage upload error:', error);
     // Fallback: return a local blob URL if cloud upload fails
     console.warn('⚠️ Using fallback local URL');
     return URL.createObjectURL(file);

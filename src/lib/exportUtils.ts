@@ -22,25 +22,32 @@ export const exportTripsToExcel = (trips: Trip[], orders: Order[], drivers: User
       'Stato Viaggio': trip.status,
       'Data Creazione Viaggio': trip.createdAt.toLocaleDateString('it-IT'),
       'Data Completamento': trip.completedAt ? trip.completedAt.toLocaleDateString('it-IT') : 'N/A',
+      
+      // Nuovi dati richiesti - basati sui campi della bolla di carico
+      'Società': loadingNote?.consigneeName || 'N/A',
+      'Deposito': loadingNote?.shipperName || 'N/A',
+      'Data': loadingNote?.loadingDate || 'N/A',
+      'Cliente': loadingNote?.carrierName || 'N/A',
+      'Destinazione': edas?.recipientInfo.address || 'N/A',
+      'Prodotto': loadingNote?.productDescription || 'N/A',
+      'Quantità Consegnata (LITRI)': loadingNote?.volumeLiters || 'N/A',
+      'Densità a 15°': edas?.productInfo.densityAt15C || 'N/A',
+      'Densità Ambiente': edas?.productInfo.densityAtAmbientTemp || 'N/A',
+      'Quantità in KG': loadingNote?.netWeightKg || 'N/A',
+      'Vettore': edas?.transportInfo.firstCarrierName || 'N/A',
+      'Autista': edas?.transportInfo.driverName || trip.driverName || 'N/A',
+      
+      // Informazioni aggiuntive
       'ID Autista': driver?.id,
-      'Autista': driver?.name || trip.driverName,
       'ID Ordine': order?.id,
       'Numero Ordine': order?.orderNumber,
       'Stato Ordine': order?.status,
-      'Cliente': order?.customerName,
-      'Codice Cliente': order?.customerCode,
-      'Indirizzo Consegna': order?.deliveryAddress,
-      'Codice Destinazione': order?.destinationCode,
-      'Prodotto': order?.product,
-      'Quantità': order?.quantity,
-      'Unità Misura': order?.quantityUnit,
-      'Note Ordine': order?.notes,
       
       // Validazione
       'Numero Discrepanze': validationErrors.length,
       'Dettaglio Discrepanze': validationSummary,
       
-      // E-DAS Data
+      // E-DAS Data completi
       'e-DAS: Numero Documento': edas?.documentInfo.dasNumber,
       'e-DAS: Versione': edas?.documentInfo.version,
       'e-DAS: Riferimento Locale': edas?.documentInfo.localReferenceNumber,
@@ -52,19 +59,15 @@ export const exportTripsToExcel = (trips: Trip[], orders: Order[], drivers: User
       'e-DAS: Mittente': edas?.senderInfo.name,
       'e-DAS: Indirizzo Mittente': edas?.senderInfo.address,
       'e-DAS: Destinatario': edas?.recipientInfo.name,
-      'e-DAS: Indirizzo Destinatario': edas?.recipientInfo.address,
       'e-DAS: Codice Fiscale Destinatario': edas?.recipientInfo.taxCode,
-      'e-DAS: Nome Vettore': edas?.transportInfo.firstCarrierName,
       'e-DAS: ID Vettore': edas?.transportInfo.firstCarrierId,
-      'e-DAS: Autista': edas?.transportInfo.driverName,
       'e-DAS: Targa Veicolo': edas?.transportInfo.vehicleId,
-      'e-DAS: Prodotto': edas?.productInfo.description,
       'e-DAS: Codice Prodotto': edas?.productInfo.productCode,
       'e-DAS: Codice UN': edas?.productInfo.unCode,
       'e-DAS: Volume a 15°C (L)': edas?.productInfo.volumeAt15CL,
       'e-DAS: Peso Netto (Kg)': edas?.productInfo.netWeightKg,
       
-      // Loading Note Data
+      // Loading Note Data completi
       'Nota Carico: Numero': loadingNote?.documentNumber,
       'Nota Carico: Data': loadingNote?.loadingDate,
       'Nota Carico: Vettore': loadingNote?.carrierName,

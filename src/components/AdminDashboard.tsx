@@ -25,8 +25,8 @@ import * as XLSX from 'xlsx';
 
 export default function AdminDashboard() {
   const { userProfile, logout } = useAuth();
-  const { orders, loading: ordersLoading } = useOrders();
-  const { trips, loading: tripsLoading } = useTrips();
+  const { orders, loading: ordersLoading, deleteOrder, updateOrder } = useOrders();
+  const { trips, loading: tripsLoading, deleteTrip, updateTrip } = useTrips();
   const { drivers, loading: driversLoading } = useDrivers();
   
   const [showCreateOrder, setShowCreateOrder] = useState(false);
@@ -53,6 +53,27 @@ export default function AdminDashboard() {
 
   const handleCloseDetailModal = () => {
     setSelectedTripForDetail(null);
+  };
+
+  const handleDeleteTrip = async (trip: Trip) => {
+    if (!confirm('Sei sicuro di voler eliminare questo viaggio? Questa azione non può essere annullata.')) {
+      return;
+    }
+
+    try {
+      // Elimina il viaggio
+      await deleteTrip(trip.id);
+      
+      // Elimina l'ordine associato se esiste
+      if (trip.orderId) {
+        await deleteOrder(trip.orderId);
+      }
+      
+      alert('Viaggio ed ordine eliminati con successo');
+    } catch (error) {
+      console.error('Errore durante l\'eliminazione:', error);
+      alert('Errore durante l\'eliminazione del viaggio');
+    }
   };
 
   if (ordersLoading || tripsLoading || driversLoading) {
@@ -209,9 +230,24 @@ export default function AdminDashboard() {
                 return {
                   'ID Viaggio': trip.id,
                   'Stato': trip.status,
-                  'Autista': trip.driverName,
-                  'Codice DAS': trip.dasCode || 'N/A',
                   'Data Creazione': dateString,
+                  
+                  // Nuovi dati richiesti
+                  'Società': trip.loadingNoteData?.consigneeName || 'N/A',
+                  'Deposito': trip.loadingNoteData?.shipperName || 'N/A',
+                  'Data': trip.loadingNoteData?.loadingDate || 'N/A',
+                  'Cliente': trip.loadingNoteData?.carrierName || 'N/A',
+                  'Destinazione': trip.edasData?.recipientInfo?.address || 'N/A',
+                  'Prodotto': trip.loadingNoteData?.productDescription || 'N/A',
+                  'Quantità Consegnata (LITRI)': trip.loadingNoteData?.volumeLiters || 'N/A',
+                  'Densità a 15°': trip.edasData?.productInfo?.densityAt15C || 'N/A',
+                  'Densità Ambiente': trip.edasData?.productInfo?.densityAtAmbientTemp || 'N/A',
+                  'Quantità in KG': trip.loadingNoteData?.netWeightKg || 'N/A',
+                  'Vettore': trip.edasData?.transportInfo?.firstCarrierName || 'N/A',
+                  'Autista': trip.edasData?.transportInfo?.driverName || trip.driverName || 'N/A',
+                  
+                  // Dati aggiuntivi
+                  'Codice DAS': trip.dasCode || 'N/A',
                   'Numero DAS EDAS': trip.edasData?.documentInfo?.dasNumber || 'N/A',
                   'Numero Fattura EDAS': trip.edasData?.documentInfo?.invoiceNumber || 'N/A',
                   'Data Spedizione EDAS': trip.edasData?.documentInfo?.shippingDateTime || 'N/A',
@@ -242,7 +278,8 @@ export default function AdminDashboard() {
         <TripsTable 
           trips={trips} 
           orders={orders} 
-          onViewDetails={handleViewTripDetails} 
+          onViewDetails={handleViewTripDetails}
+          onDeleteTrip={handleDeleteTrip}
         />
       </main>
 
@@ -309,6 +346,39 @@ export default function AdminDashboard() {
         onViewImages={(trip) => {
           handleCloseDetailModal();
           handleViewImages(trip);
+        }}
+        onSaveChanges={async (tripId: string, changes: any) => {
+          try {
+            const tripUpdates: any = {};
+            const orderUpdates: any = {};
+            
+            // Separare le modifiche per trip e order
+            Object.entries(changes).forEach(([key, value]) => {
+              if (key.startsWith('order.')) {
+                // Modifiche all'ordine
+                const orderKey = key.replace('order.', '');
+                orderUpdates[orderKey] = value;
+              } else if (key.startsWith('edasData.') || key.startsWith('loadingNoteData.') || ['status', 'driverName', 'dasCode', 'completedAt'].includes(key)) {
+                // Modifiche al trip - usa dot notation per Firestore
+                tripUpdates[key] = value;
+              }
+            });
+            
+            // Aggiornare il trip se ci sono modifiche
+            if (Object.keys(tripUpdates).length > 0) {
+              await updateTrip(tripId, tripUpdates);
+            }
+            
+            // Aggiornare l'order se ci sono modifiche
+            if (Object.keys(orderUpdates).length > 0 && selectedTripForDetail?.orderId) {
+              await updateOrder(selectedTripForDetail.orderId, orderUpdates);
+            }
+            
+            console.log('Modifiche salvate con successo');
+          } catch (error) {
+            console.error('Errore durante il salvataggio:', error);
+            throw error;
+          }
         }}
       />
     </div>

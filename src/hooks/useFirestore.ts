@@ -118,7 +118,11 @@ export function useTrips(driverId?: string) {
     });
   };
 
-  return { trips, loading, addTrip, updateTrip, completeTrip };
+  const deleteTrip = async (id: string) => {
+    await deleteDoc(doc(db, 'trips', id));
+  };
+
+  return { trips, loading, addTrip, updateTrip, completeTrip, deleteTrip };
 }
 
 // Hook per gestire gli utenti autisti
