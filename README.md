@@ -215,3 +215,46 @@ Quantità: 3000 Litri (L) Quantità effettiva: Identificativo: 14114641005
 ## Licenza
 
 Questo progetto è distribuito sotto licenza MIT. Vedi `LICENSE` per maggiori informazioni.
+
+# 🚀 Deployment con Docker
+
+## Avvio Rapido con Docker Compose
+
+Tutte le credenziali sono già hardcodate nel sistema Docker. Per avviare l'applicazione:
+
+```bash
+# Avvia l'applicazione in modalità detached
+docker compose up -d
+
+# Visualizza i logs in tempo reale
+docker compose logs -f
+
+# Ferma l'applicazione
+docker compose down
+```
+
+L'applicazione sarà disponibile su `http://localhost:3000`
+
+## Credenziali Hardcodate
+
+Il sistema è preconfigurato con:
+
+- ✅ **Firebase principale** (dmprojectnew) - Auth, Database, Storage generale
+- ✅ **Firebase dedicato immagini** (petrolis-cd75b) - Storage documenti
+- ✅ **OpenAI API** - Parsing documenti con AI
+- ✅ **ImgBB API** - Legacy (non più utilizzata)
+
+## Rebuild del Container
+
+Se fai modifiche al codice:
+
+```bash
+# Rebuild e restart
+docker compose up -d --build
+
+# O rebuild completo senza cache
+docker compose build --no-cache
+docker compose up -d
+```
+
+---
