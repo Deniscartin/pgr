@@ -1,64 +1,270 @@
 import OpenAI from 'openai';
+import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { ParsedLoadingNoteData, ParsedEDASData } from '@/lib/types';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Path to service account key file (best practice per sicurezza)
+const serviceAccountKeyPath = './tidal-glider-465915-e6-7d63dd15c624.json';
+
+// Initialize Google Cloud Document AI client with EU endpoint and key file
+const documentAIClient = new DocumentProcessorServiceClient({
+  apiEndpoint: 'eu-documentai.googleapis.com',
+  keyFilename: serviceAccountKeyPath
+});
+
 /**
- * Parses a loading note image to extract structured data.
+ * Parses a loading note image to extract structured data using Google Cloud Document AI.
  * @param base64Image The base64-encoded image string.
  * @param mimeType The MIME type of the image.
  * @returns A promise that resolves to the parsed loading note data.
  */
 export async function parseLoadingNote(base64Image: string, mimeType: string): Promise<ParsedLoadingNoteData> {
-  const prompt = `
-    You are an expert data extractor. Analyze the provided image, which is a "Nota di Carico" (loading note or bill of lading), and extract the information in JSON format.
-    The JSON object must strictly follow this TypeScript interface:
+  console.log('🔍 Inizio parsing Loading Note con Google Cloud Document AI...');
 
-    interface ParsedLoadingNoteData {
-      documentNumber: string; // e.g., "NC-2025-00123"
-      loadingDate: string; // e.g., "10/07/2025"
-      carrierName: string; // e.g., "NewLogistic S.R.L."
-      shipperName: string; // e.g., "DE LORENZO CARBURANTI S.R.L."
-      consigneeName: string; // e.g., "D'URZO DOMENICO"
-      productDescription: string; // e.g., "GASOLIO 10PPM AGRICOLO"
-      grossWeightKg: number; // e.g., 8350
-      netWeightKg: number; // e.g., 8200
-      volumeLiters: number; // e.g., 10000
-      notes: string; // Any additional notes or comments
+  // Configuration - hardcoded values from petrolisNDC processor
+  const projectId = 'tidal-glider-465915-e6';
+  const location = 'eu';
+  const processorId = 'd9befe118d921091';
+
+  const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
+
+  console.log('📋 Document AI Configuration:');
+  console.log('Processor Name: petrolisNDC');
+  console.log('Processor Type: Custom Extractor');
+  console.log('API Endpoint: eu-documentai.googleapis.com');
+  console.log('Project ID:', projectId);
+  console.log('Location:', location);
+  console.log('Processor ID:', processorId);
+  console.log('Service Account: petrolisocr@tidal-glider-465915-e6.iam.gserviceaccount.com');
+  console.log('🔧 Private Key Fixed: Literal \\n converted to newlines');
+  console.log('Full Processor Path:', name);
+
+  try {
+    // Process the document with Document AI
+    const request = {
+      name,
+      rawDocument: {
+        content: base64Image,
+        mimeType: mimeType,
+      },
+    };
+
+    console.log('📤 Inviando richiesta a Document AI...');
+    const [result] = await documentAIClient.processDocument(request);
+    const { document } = result;
+
+    if (!document) {
+      throw new Error('No document returned from Document AI');
     }
 
-    Extract all fields accurately. If a field is not present, return an empty string "" for string types, 0 for number types, or null.
-    The final output must be only the JSON object, without any other text or explanations.
-  `;
+    console.log('📄 RAW RESPONSE da Document AI (Loading Note):');
+    console.log('===============================================');
+    console.log('Text length:', document.text?.length || 0);
+    console.log('Pages:', document.pages?.length || 0);
+    console.log('Entities:', document.entities?.length || 0);
+    console.log('Form fields:', document.pages?.[0]?.formFields?.length || 0);
+    console.log('Tables:', document.pages?.[0]?.tables?.length || 0);
+    console.log('===============================================');
 
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          {
-            type: 'image_url',
-            image_url: {
-              url: `data:${mimeType};base64,${base64Image}`,
-            },
-          },
-        ],
-      },
-    ],
-    max_tokens: 4000,
-    response_format: { type: "json_object" },
-  });
+    // Extract key-value pairs and entities
+    const formFields = document.pages?.[0]?.formFields || [];
+    const entities = document.entities || [];
+    const documentText = document.text || '';
 
-  const content = response.choices[0].message?.content;
-  if (!content) {
-    throw new Error('No content from OpenAI');
+    // Helper function to extract text from TextAnchor
+    const getText = (textAnchor: any) => {
+      if (!textAnchor?.textSegments || textAnchor.textSegments.length === 0) {
+        return '';
+      }
+      const segment = textAnchor.textSegments[0];
+      const startIndex = segment.startIndex || 0;
+      const endIndex = segment.endIndex || 0;
+      return documentText.substring(Number(startIndex), Number(endIndex)).trim();
+    };
+
+    // Create a map of form fields for easier lookup
+    const fieldMap: Record<string, string> = {};
+    formFields.forEach((field: any) => {
+      const fieldName = getText(field.fieldName).toLowerCase();
+      const fieldValue = getText(field.fieldValue);
+      if (fieldName && fieldValue) {
+        fieldMap[fieldName] = fieldValue;
+      }
+    });
+
+    // Create a map of entities for easier lookup
+    const entityMap: Record<string, string[]> = {};
+    entities.forEach((entity: any) => {
+      const entityType = entity.type || '';
+      const entityValue = getText(entity.textAnchor);
+      if (entityType && entityValue) {
+        if (!entityMap[entityType]) {
+          entityMap[entityType] = [];
+        }
+        entityMap[entityType].push(entityValue);
+      }
+    });
+
+    console.log('🔍 CAMPI ESTRATTI (Form Fields):');
+    console.log('================================');
+    Object.entries(fieldMap).forEach(([key, value]) => {
+      console.log(`${key}: ${value}`);
+    });
+    console.log('================================');
+
+    console.log('🔍 ENTITÀ ESTRATTE (Entities):');
+    console.log('===============================');
+    Object.entries(entityMap).forEach(([type, values]) => {
+      console.log(`${type}: ${values.join(', ')}`);
+    });
+    console.log('===============================');
+
+    // Map Document AI results to our LoadingNoteData structure
+    // Using exact field names from petrolisNDC processor configuration
+    const parsedData: ParsedLoadingNoteData = {
+      // Document number - use das field (same as EDAS)
+      documentNumber: findFieldValue(['das'], fieldMap, entityMap) || 
+                     extractFirstValue(entityMap['id']) || '',
+
+      // Loading date - use exact 'data' field from Document AI
+      loadingDate: findFieldValue(['data'], fieldMap, entityMap) || 
+                  extractFirstValue(entityMap['date_time']) || '',
+
+      // Carrier name - use exact 'vettore' field
+      carrierName: findFieldValue(['vettore'], fieldMap, entityMap) || 
+                  extractFirstValue(entityMap['organization']) || '',
+
+      // Shipper name - use 'deposito' field (Fornitore)
+      shipperName: findFieldValue(['deposito'], fieldMap, entityMap) || '',
+
+      // Consignee name - use exact 'destinazione' field
+      consigneeName: findFieldValue(['destinazione'], fieldMap, entityMap) || 
+                    extractFirstValue(entityMap['person']) || '',
+
+      // Product description - use exact 'prodotto' field
+      productDescription: findFieldValue(['prodotto'], fieldMap, entityMap) || '',
+
+      // Weight - use exact 'qnt-in-kg' field for both gross and net
+      grossWeightKg: parseNumber(findFieldValue(['qnt-in-kg'], fieldMap, entityMap)) || 0,
+      netWeightKg: parseNumber(findFieldValue(['qnt-in-kg'], fieldMap, entityMap)) || 0,
+      
+      // Volume - use exact 'quantita-consegnata' field and convert to number
+      volumeLiters: parseNumber(findFieldValue(['quantita-consegnata'], fieldMap, entityMap)) || 0,
+
+      // Notes include driver and density info
+      notes: `Autista: ${findFieldValue(['autista'], fieldMap, entityMap) || 'N/A'} | ` +
+             `Densità 15°C: ${findFieldValue(['densita-15'], fieldMap, entityMap) || 'N/A'} | ` +
+             `Densità ambiente: ${findFieldValue(['densita-ambiente'], fieldMap, entityMap) || 'N/A'}`,
+    };
+
+    // If netWeightKg is 0, use grossWeightKg
+    if (parsedData.netWeightKg === 0 && parsedData.grossWeightKg > 0) {
+      parsedData.netWeightKg = parsedData.grossWeightKg;
+    }
+
+    console.log('✅ DATI PARSATI (Loading Note):');
+    console.log('===============================');
+    console.log('Document Number:', parsedData.documentNumber);
+    console.log('Loading Date:', parsedData.loadingDate);
+    console.log('Carrier Name:', parsedData.carrierName);
+    console.log('Shipper Name:', parsedData.shipperName);
+    console.log('Consignee Name:', parsedData.consigneeName);
+    console.log('Product Description:', parsedData.productDescription);
+    console.log('Gross Weight (kg):', parsedData.grossWeightKg);
+    console.log('Net Weight (kg):', parsedData.netWeightKg);
+    console.log('Volume (liters):', parsedData.volumeLiters);
+    console.log('Notes length:', parsedData.notes.length);
+    console.log('===============================');
+
+    return parsedData;
+
+  } catch (error) {
+    console.error('❌ ERRORE nel processamento Document AI (Loading Note):', error);
+    throw new Error(`Failed to process document with Document AI: ${error}`);
   }
+}
 
-  return JSON.parse(content);
+/**
+ * Helper function to find a field value by checking entities first, then form fields
+ */
+function findFieldValue(possibleNames: string[], fieldMap: Record<string, string>, entityMap: Record<string, string[]> = {}): string | null {
+  // First try to find in entities (more accurate for our processors)
+  for (const name of possibleNames) {
+    for (const [entityType, entityValues] of Object.entries(entityMap)) {
+      if (entityType.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(entityType.toLowerCase())) {
+        return entityValues.length > 0 ? entityValues[0] : null;
+      }
+    }
+  }
+  
+  // Fallback to form fields
+  for (const name of possibleNames) {
+    for (const [fieldName, fieldValue] of Object.entries(fieldMap)) {
+      if (fieldName.includes(name) || name.includes(fieldName)) {
+        return fieldValue;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Helper function to extract the first value from an entity array
+ */
+function extractFirstValue(values: string[] | undefined): string | null {
+  return values && values.length > 0 ? values[0] : null;
+}
+
+/**
+ * Helper function to parse a string as a number
+ * Handles Italian number format and multiple values separated by comma
+ */
+function parseNumber(value: string | null): number {
+  if (!value) return 0;
+  
+  // If multiple values separated by comma, take the first one (but handle comma as decimal separator)
+  let firstValue = value.trim();
+  
+  // Check if we have multiple numbers separated by comma (like "4.000, 3.954")
+  // If the comma is followed by a space and more digits, it's a separator between values
+  const commaSpacePattern = /,\s+\d/;
+  if (commaSpacePattern.test(firstValue)) {
+    firstValue = firstValue.split(',')[0].trim();
+  }
+  
+  // Clean: remove non-numeric chars except dots and commas
+  const cleaned = firstValue.replace(/[^\d.,]/g, '');
+  
+  // Handle Italian number format:
+  // - Dots are thousand separators (4.000 = 4000)
+  // - Commas are decimal separators (4,5 = 4.5)
+  let normalizedNumber = cleaned;
+  
+  // If there's a comma, it's the decimal separator
+  if (normalizedNumber.includes(',')) {
+    // Replace dots (thousand separators) with empty string, then comma with dot
+    normalizedNumber = normalizedNumber.replace(/\./g, '').replace(',', '.');
+  } else if (normalizedNumber.includes('.')) {
+    // If only dots and no comma, check if it's a decimal or thousand separator
+    // If there are 3 digits after the last dot, it's likely a thousand separator
+    const lastDotIndex = normalizedNumber.lastIndexOf('.');
+    const digitsAfterLastDot = normalizedNumber.length - lastDotIndex - 1;
+    
+    if (digitsAfterLastDot === 3 && !normalizedNumber.substring(0, lastDotIndex).includes('.')) {
+      // Single dot with exactly 3 digits after = thousand separator (e.g., "4.000")
+      normalizedNumber = normalizedNumber.replace('.', '');
+    } else if (digitsAfterLastDot === 3) {
+      // Multiple dots with 3 digits after last = thousand separators (e.g., "1.234.567")
+      normalizedNumber = normalizedNumber.replace(/\./g, '');
+    }
+    // Otherwise assume it's a decimal separator
+  }
+  
+  const parsed = parseFloat(normalizedNumber);
+  return isNaN(parsed) ? 0 : parsed;
 }
 
 /**
@@ -68,85 +274,172 @@ export async function parseLoadingNote(base64Image: string, mimeType: string): P
  * @returns A promise that resolves to the parsed e-DAS data.
  */
 export async function parseEdas(base64Image: string, mimeType: string): Promise<ParsedEDASData> {
-  const prompt = `
-    You are an expert data extractor. Analyze the provided image, which is an e-DAS shipping document, and extract the information in JSON format.
-    The JSON object must strictly follow this TypeScript interface:
+  try {
+    console.log('🔍 Inizio parsing e-DAS con Google Cloud Document AI...');
+    
+    // Configuration - processore EDAS
+    const projectId = 'tidal-glider-465915-e6';
+    const location = 'eu';
+    const processorId = 'cb0cd41d387b97ec'; // Processore per EDAS
+    
+    const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
+    
+    console.log('📋 Document AI Configuration (EDAS):');
+    console.log('Processor Name: petrolisEDAS');
+    console.log('Processor Type: Custom Extractor');
+    console.log('API Endpoint: eu-documentai.googleapis.com');
+    console.log('Project ID:', projectId);
+    console.log('Location:', location);
+    console.log('Processor ID:', processorId);
+    console.log('Service Account: petrolisocr@tidal-glider-465915-e6.iam.gserviceaccount.com');
+    console.log('Full Processor Path:', name);
 
-    interface ParsedEDASData {
-      documentInfo: {
-        dasNumber: string; // e.g., "25IT9436490VVY00143T1"
-        version: string; // e.g., "1"
-        localReferenceNumber: string; // e.g., "20250710..0062516/2020"
-        invoiceNumber: string; // e.g., "..0062516/2020"
-        invoiceDate: string; // e.g., "10/07/2025"
-        registrationDateTime: string; // e.g., "10/07/2025 08:20:49"
-        shippingDateTime: string; // e.g., "10/07/2025 08:34:00"
-        validityExpirationDateTime: string; // e.g., "11/07/2025 02:34:00"
-      };
-      senderInfo: {
-        depositoMittenteCode: string; // e.g., "IT00VVY00143T"
-        name: string; // e.g., "DE LORENZO CARBURANTI S.R.L."
-        address: string; // e.g., "S.P. PER TROPESA KM 22+827 E KM 22+917 SN 89900 VIBO VALENTIA"
-      };
-      depositorInfo: {
-        name: string; // e.g., "GEAVIS SRL"
-        id: string; // e.g., "IT01776680660"
-      };
-      recipientInfo: {
-        name: string; // e.g., "D'URZO DOMENICO"
-        address: string; // e.g., "VIA MELISSANDRA, 27 89900 VIBO VALENTIA"
-        taxCode: string; // e.g., "IT03949420792"
-      };
-      transportInfo: {
-        transportManager: string; // e.g., "Proprietario dei prodotti"
-        transportMode: string; // e.g., "Trasporto stradale"
-        vehicleType: string; // e.g., "Veicolo"
-        vehicleId: string; // e.g., "IT BH442WZ"
-        estimatedDuration: string; // e.g., "18 Ore"
-        firstCarrierName: string; // e.g., "NEWLOGISTIC DI D'ASCOLI EUGENIA"
-        firstCarrierId: string; // e.g., "IT03396340790"
-        driverName: string; // e.g., "MAZZITELLI ANTONIO"
-      };
-      productInfo: {
-        productCode: string; // e.g., "E44027102011S135"
-        description: string; // e.g., "GASOLIO 10PPM AGRICOLO"
-        unCode: string; // e.g., "UN 1202"
-        netWeightKg: number; // e.g., 82
-        volumeAtAmbientTempL: number; // volume a temperatura ambiente e.g., 2000
-        volumeAt15CL: number; // volume a 15°C e.g., 99
-        densityAtAmbientTemp: number; // densità a temperatura ambiente e.g., 815.00
-        densityAt15C: number; // densità a 15°C e.g., 824.90
-      };
+    // Convert base64 to Buffer
+    const imageBuffer = Buffer.from(base64Image, 'base64');
+
+    // Process the document
+    const [result] = await documentAIClient.processDocument({
+      name: name,
+      rawDocument: {
+        content: imageBuffer,
+        mimeType: mimeType,
+      },
+    });
+
+    const { document } = result;
+    if (!document) {
+      throw new Error('No document returned from Document AI');
     }
 
-    Extract all fields accurately. If a field is not present, return an empty string "" for string types, 0 for number types, or null.
-    The final output must be only the JSON object, without any other text or explanations.
-  `;
+    console.log('📄 RAW RESPONSE da Document AI (e-DAS):');
+    console.log('===============================================');
+    console.log('Text length:', document.text?.length || 0);
+    console.log('Pages:', document.pages?.length || 0);
+    console.log('Entities:', document.entities?.length || 0);
+    console.log('Form fields:', document.pages?.[0]?.formFields?.length || 0);
+    console.log('Tables:', document.pages?.[0]?.tables?.length || 0);
+    console.log('===============================================');
 
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o', // Using gpt-4o for better performance
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          {
-            type: 'image_url',
-            image_url: {
-              url: `data:${mimeType};base64,${base64Image}`,
-            },
-          },
-        ],
+    // Extract key-value pairs and entities
+    const formFields = document.pages?.[0]?.formFields || [];
+    const entities = document.entities || [];
+    const documentText = document.text || '';
+
+    // Helper function to extract text from TextAnchor
+    const getText = (textAnchor: any) => {
+      if (!textAnchor?.textSegments || textAnchor.textSegments.length === 0) {
+        return '';
+      }
+      const segment = textAnchor.textSegments[0];
+      const startIndex = segment.startIndex || 0;
+      const endIndex = segment.endIndex || 0;
+      return documentText.substring(Number(startIndex), Number(endIndex)).trim();
+    };
+
+    // Create a map of form fields for easier lookup
+    const fieldMap: Record<string, string> = {};
+    formFields.forEach((field: any) => {
+      const fieldName = getText(field.fieldName).toLowerCase();
+      const fieldValue = getText(field.fieldValue);
+      if (fieldName && fieldValue) {
+        fieldMap[fieldName] = fieldValue;
+      }
+    });
+
+    // Create a map of entities for easier lookup
+    const entityMap: Record<string, string[]> = {};
+    entities.forEach((entity: any) => {
+      const entityType = entity.type || '';
+      const entityValue = getText(entity.textAnchor);
+      if (entityType && entityValue) {
+        if (!entityMap[entityType]) {
+          entityMap[entityType] = [];
+        }
+        entityMap[entityType].push(entityValue);
+      }
+    });
+
+    console.log('🔍 CAMPI ESTRATTI (Form Fields) - EDAS:');
+    console.log('========================================');
+    Object.entries(fieldMap).forEach(([key, value]) => {
+      console.log(`${key}: ${value}`);
+    });
+    console.log('========================================');
+
+    console.log('🔍 ENTITÀ ESTRATTE (Entities) - EDAS:');
+    console.log('======================================');
+    Object.entries(entityMap).forEach(([type, values]) => {
+      console.log(`${type}: ${values.join(', ')}`);
+    });
+    console.log('======================================');
+
+    // Map Document AI results to ParsedEDASData structure
+    // Using exact field names from petrolisEDAS processor configuration
+    const parsedData: ParsedEDASData = {
+      documentInfo: {
+        dasNumber: findFieldValue(['das-n'], fieldMap, entityMap) || '',
+        version: findFieldValue(['version', 'versione'], fieldMap, entityMap) || '1',
+        localReferenceNumber: findFieldValue(['riferimento', 'reference'], fieldMap, entityMap) || '',
+        invoiceNumber: findFieldValue(['fattura', 'invoice'], fieldMap, entityMap) || '',
+        invoiceDate: findFieldValue(['data', 'date'], fieldMap, entityMap) || '',
+        registrationDateTime: findFieldValue(['registrazione', 'registration'], fieldMap, entityMap) || '',
+        shippingDateTime: findFieldValue(['data-e-ora-di-spedizione'], fieldMap, entityMap) || '',
+        validityExpirationDateTime: findFieldValue(['scadenza', 'expiration'], fieldMap, entityMap) || '',
       },
-    ],
-    max_tokens: 4000,
-    response_format: { type: "json_object" },
-  });
+      senderInfo: {
+        depositoMittenteCode: findFieldValue(['deposito-mittente'], fieldMap, entityMap) || '',
+        name: findFieldValue(['nome', 'name', 'sender'], fieldMap, entityMap) || extractFirstValue(entityMap['organization']) || '',
+        address: findFieldValue(['indirizzo', 'address'], fieldMap, entityMap) || '',
+      },
+      depositorInfo: {
+        name: findFieldValue(['depositante'], fieldMap, entityMap) || '',
+        id: findFieldValue(['id', 'codice'], fieldMap, entityMap) || '',
+      },
+      recipientInfo: {
+        name: findFieldValue(['destinatario'], fieldMap, entityMap) || extractFirstValue(entityMap['person']) || '',
+        address: findFieldValue(['indirizzo', 'address'], fieldMap, entityMap) || '',
+        taxCode: findFieldValue(['impianto-ricevente'], fieldMap, entityMap) || '',
+      },
+      transportInfo: {
+        transportManager: findFieldValue(['gestore', 'manager'], fieldMap, entityMap) || '',
+        transportMode: findFieldValue(['modalità', 'mode'], fieldMap, entityMap) || '',
+        vehicleType: findFieldValue(['tipo', 'type'], fieldMap, entityMap) || '',
+        vehicleId: findFieldValue(['veicolo', 'vehicle'], fieldMap, entityMap) || '',
+        estimatedDuration: findFieldValue(['durata', 'duration'], fieldMap, entityMap) || '',
+        firstCarrierName: findFieldValue(['vettore', 'carrier'], fieldMap, entityMap) || '',
+        firstCarrierId: findFieldValue(['vettore', 'carrier'], fieldMap, entityMap) || '',
+        driverName: findFieldValue(['primo-incaricato-del-trasporto'], fieldMap, entityMap) || extractFirstValue(entityMap['person']) || '',
+      },
+      productInfo: {
+        productCode: findFieldValue(['codice', 'code'], fieldMap, entityMap) || '',
+        description: findFieldValue(['prodotto'], fieldMap, entityMap) || '',
+        unCode: findFieldValue(['un', 'code'], fieldMap, entityMap) || '',
+        netWeightKg: parseNumber(findFieldValue(['peso-netto-kg'], fieldMap, entityMap)) || 0,
+        volumeAtAmbientTempL: parseNumber(findFieldValue(['volume-temp-ambiente'], fieldMap, entityMap)) || 0,
+        volumeAt15CL: parseNumber(findFieldValue(['volume-a-15'], fieldMap, entityMap)) || 0,
+        densityAtAmbientTemp: parseNumber(findFieldValue(['densita-a-temp-ambiente-lt'], fieldMap, entityMap)) || 0,
+        densityAt15C: parseNumber(findFieldValue(['densità', 'density'], fieldMap, entityMap)) || 0,
+      },
+    };
 
-  const content = response.choices[0].message?.content;
-  if (!content) {
-    throw new Error('No content from OpenAI');
+    console.log('✅ DATI PARSATI (e-DAS):');
+    console.log('========================');
+    console.log('DAS Number:', parsedData.documentInfo.dasNumber);
+    console.log('Invoice Date:', parsedData.documentInfo.invoiceDate);
+    console.log('Sender Name:', parsedData.senderInfo.name);
+    console.log('Recipient Name:', parsedData.recipientInfo.name);
+    console.log('Product Description:', parsedData.productInfo.description);
+    console.log('Net Weight (kg):', parsedData.productInfo.netWeightKg);
+    console.log('Volume at 15°C (L):', parsedData.productInfo.volumeAt15CL);
+    console.log('Density at 15°C:', parsedData.productInfo.densityAt15C);
+    console.log('Driver Name:', parsedData.transportInfo.driverName);
+    console.log('Vehicle ID:', parsedData.transportInfo.vehicleId);
+    console.log('========================');
+
+    return parsedData;
+
+  } catch (error) {
+    console.error('❌ ERRORE nel processamento Document AI (e-DAS):', error);
+    throw new Error(`Failed to process EDAS document with Document AI: ${error}`);
   }
-
-  return JSON.parse(content);
 } 

@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ImageAnnotatorClient } from '@google-cloud/vision';
 import OpenAI from 'openai';
 import { ParsedPDFData } from '@/lib/types';
 
-// This assumes you have OPENAI_API_KEY set in your environment variables
+// Initialize Google Vision client for OCR
+const vision = new ImageAnnotatorClient({
+  // For authentication, set GOOGLE_APPLICATION_CREDENTIALS environment variable
+  // or use other authentication methods as per Google Cloud documentation
+});
+
+// Initialize OpenAI client for structured parsing
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -17,11 +24,27 @@ export async function POST(req: NextRequest) {
     }
 
     const imageBuffer = await imageFile.arrayBuffer();
-    const base64Image = Buffer.from(imageBuffer).toString('base64');
-    const mimeType = imageFile.type;
+    const imageBytes = new Uint8Array(imageBuffer);
 
+    // Step 1: Extract text using Google Vision API OCR
+    const [result] = await vision.textDetection({
+      image: {
+        content: Buffer.from(imageBytes).toString('base64'),
+      },
+    });
+
+    const detections = result.textAnnotations;
+    if (!detections || detections.length === 0) {
+      return NextResponse.json({ error: 'No text detected in image' }, { status: 400 });
+    }
+
+    // The first element contains the entire detected text
+    const extractedText = detections[0].description || '';
+
+    // Step 2: Use OpenAI to parse the extracted text into structured data
     const prompt = `
-      You are an expert data extractor. Analyze the provided image, which is a shipping document, and extract the information in JSON format.
+      You are an expert data extractor. I have extracted the following text from a shipping document using OCR. 
+      Please analyze this text and extract the information in JSON format.
       The JSON object must strictly follow this TypeScript interface:
 
       interface ParsedPDFData {
@@ -56,24 +79,19 @@ export async function POST(req: NextRequest) {
         }>;
       }
 
-      Extract all fields accurately. If a field is not present, return an empty string "" for string types, 0 for number types, or an empty array [] for arrays.
+      Extract all fields accurately from the OCR text below. If a field is not present, return an empty string "" for string types, 0 for number types, or an empty array [] for arrays.
       The final output must be only the JSON object, without any other text or explanations.
+
+      OCR Text:
+      ${extractedText}
     `;
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4.1',
+      model: 'gpt-4o',
       messages: [
         {
           role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mimeType};base64,${base64Image}`,
-              },
-            },
-          ],
+          content: prompt,
         },
       ],
       max_tokens: 2000,
@@ -84,7 +102,7 @@ export async function POST(req: NextRequest) {
       throw new Error('No content from OpenAI');
     }
 
-    // OpenAI might wrap the JSON in ```json ... ```, so let's clean that up.
+    // OpenAI might wrap the JSON in ```json ... ```, so let's clean that up
     const jsonString = content.replace(/```json/g, '').replace(/```/g, '').trim();
 
     const parsedData: ParsedPDFData = JSON.parse(jsonString);
