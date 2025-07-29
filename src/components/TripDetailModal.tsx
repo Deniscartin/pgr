@@ -141,9 +141,6 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
 
   const tabs = [
     { id: 'general', label: 'Generale', icon: <FileText className="h-4 w-4" /> },
-    { id: 'edas', label: 'EDAS', icon: <Package className="h-4 w-4 ml-4" /> },
-    { id: 'loading', label: 'Bolla di Carico', icon: <Truck className="h-4 w-4 ml-4" /> },
-    { id: 'validation', label: 'Validazione', icon: <CheckCircle className="h-4 w-4 ml-4" /> },
     { id: 'images', label: 'Immagini', icon: <ImageIcon className="h-4 w-4 ml-4" /> }
   ];
 
@@ -191,18 +188,9 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
             <h2 id="modal-title" className="text-2xl font-bold text-gray-900 mb-1">
               Dettagli Viaggio
             </h2>
-            <div className="flex items-center gap-2">
             <p className="text-sm text-gray-600">
-                Numero EDAS: {getCurrentValue('edasData.documentInfo.dasNumber', trip.edasData?.documentInfo?.dasNumber) || trip.id.substring(0, 8) + '...'}
-              </p>
-              <button 
-                onClick={() => setActiveTab('edas')}
-                className="text-indigo-600 hover:text-indigo-800 p-1"
-                title="Modifica numero EDAS"
-              >
-                <Edit3 className="h-4 w-4" />
-              </button>
-            </div>
+              Numero EDAS: {getCurrentValue('edasData.documentInfo.dasNumber', trip.edasData?.documentInfo?.dasNumber) || trip.id.substring(0, 8) + '...'}
+            </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-full transition-colors">
             <X className="h-6 w-6" />
@@ -265,7 +253,7 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
         <div className="flex-1 overflow-y-auto">
           {activeTab === 'general' && (
             <div className="p-6 space-y-8">
-              <section>
+              {/* <section>
                 <h3 className="text-xl font-semibold text-gray-900 mb-6 pb-2 border-b-2 border-indigo-100">
                   Informazioni Viaggio
                 </h3>
@@ -292,15 +280,10 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                       onEdit={(value) => handleFieldEdit('completedAt', value)} 
                       type="date"
                     />
-                    <DetailItem 
-                      label="Codice DAS" 
-                      value={getCurrentValue('dasCode', trip.dasCode)} 
-                      isEditable 
-                      onEdit={(value) => handleFieldEdit('dasCode', value)} 
-                    />
+                   
                   </div>
                 </div>
-              </section>
+              </section> */}
 
                 <section>
                   <h3 className="text-xl font-semibold text-gray-900 mb-6 pb-2 border-b-2 border-indigo-100">
@@ -329,15 +312,15 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                     />
                     <DetailItem 
                       label="Cliente" 
-                      value={getCurrentValue('loadingNoteData.carrierName', trip.loadingNoteData?.carrierName)} 
+                      value={getCurrentValue('edasData.recipientInfo.name', trip.edasData?.recipientInfo?.name)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('loadingNoteData.carrierName', value)} 
+                      onEdit={(value) => handleFieldEdit('edasData.recipientInfo.name', value)} 
                     />
                     <DetailItem 
                       label="Destinazione" 
-                      value={getCurrentValue('edasData.recipientInfo.address', trip.edasData?.recipientInfo?.address)} 
+                      value={getCurrentValue('edasData.recipientInfo.name', trip.edasData?.recipientInfo?.name)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('edasData.recipientInfo.address', value)} 
+                      onEdit={(value) => handleFieldEdit('edasData.recipientInfo.name', value)} 
                       type="textarea"
                     />
                     <DetailItem 
@@ -356,9 +339,9 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                     />
                     <DetailItem 
                       label="Densità a 15°" 
-                      value={getCurrentValue('edasData.productInfo.densityAt15C', trip.edasData?.productInfo?.densityAt15C)} 
+                      value={getCurrentValue('edasData.productInfo.volumeAt15CL', trip.edasData?.productInfo?.volumeAt15CL)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('edasData.productInfo.densityAt15C', value)} 
+                      onEdit={(value) => handleFieldEdit('edasData.productInfo.volumeAt15CL', value)} 
                       type="number"
                     />
                     <DetailItem 
@@ -377,9 +360,9 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                     />
                     <DetailItem 
                       label="Vettore" 
-                      value={getCurrentValue('edasData.transportInfo.firstCarrierName', trip.edasData?.transportInfo?.firstCarrierName)} 
+                      value={getCurrentValue('loadingNoteData.carrierName', trip.loadingNoteData?.carrierName)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('edasData.transportInfo.firstCarrierName', value)} 
+                      onEdit={(value) => handleFieldEdit('loadingNoteData.carrierName', value)} 
                     />
                     <DetailItem 
                       label="Autista" 
@@ -390,364 +373,6 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                   </div>
                   </div>
                 </section>
-            </div>
-          )}
-
-          {activeTab === 'edas' && (
-            <div className="p-6 space-y-8">
-              {trip.edasData ? (
-                <>
-                  <section>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-6 pb-2 border-b-2 border-indigo-100">
-                      Informazioni Documento EDAS
-                    </h3>
-                    <div className="bg-gray-50 rounded-lg p-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-                        <DetailItem 
-                          label="Numero DAS" 
-                          value={getCurrentValue('edasData.documentInfo.dasNumber', trip.edasData.documentInfo?.dasNumber)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.documentInfo.dasNumber', value)} 
-                        />
-                        <DetailItem 
-                          label="Versione" 
-                          value={getCurrentValue('edasData.documentInfo.version', trip.edasData.documentInfo?.version)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.documentInfo.version', value)} 
-                        />
-                        <DetailItem 
-                          label="Riferimento Locale" 
-                          value={getCurrentValue('edasData.documentInfo.localReferenceNumber', trip.edasData.documentInfo?.localReferenceNumber)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.documentInfo.localReferenceNumber', value)} 
-                        />
-                        <DetailItem 
-                          label="Numero Fattura" 
-                          value={getCurrentValue('edasData.documentInfo.invoiceNumber', trip.edasData.documentInfo?.invoiceNumber)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.documentInfo.invoiceNumber', value)} 
-                        />
-                        <DetailItem 
-                          label="Data Fattura" 
-                          value={getCurrentValue('edasData.documentInfo.invoiceDate', trip.edasData.documentInfo?.invoiceDate)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.documentInfo.invoiceDate', value)} 
-                          type="date"
-                        />
-                        <DetailItem 
-                          label="Data Registrazione" 
-                          value={getCurrentValue('edasData.documentInfo.registrationDateTime', trip.edasData.documentInfo?.registrationDateTime)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.documentInfo.registrationDateTime', value)} 
-                          type="date"
-                        />
-                        <DetailItem 
-                          label="Data Spedizione" 
-                          value={getCurrentValue('edasData.documentInfo.shippingDateTime', trip.edasData.documentInfo?.shippingDateTime)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.documentInfo.shippingDateTime', value)} 
-                          type="date"
-                        />
-                        <DetailItem 
-                          label="Scadenza Validità" 
-                          value={getCurrentValue('edasData.documentInfo.validityExpirationDateTime', trip.edasData.documentInfo?.validityExpirationDateTime)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.documentInfo.validityExpirationDateTime', value)} 
-                          type="date"
-                        />
-                      </div>
-                    </div>
-                  </section>
-
-                  <section>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-6 pb-2 border-b-2 border-green-100">
-                      Informazioni Mittente
-                    </h3>
-                    <div className="bg-green-50 rounded-lg p-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-                        <DetailItem 
-                          label="Nome" 
-                          value={getCurrentValue('edasData.senderInfo.name', trip.edasData.senderInfo?.name)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.senderInfo.name', value)} 
-                        />
-                        <DetailItem 
-                          label="Codice Deposito" 
-                          value={getCurrentValue('edasData.senderInfo.depositoMittenteCode', trip.edasData.senderInfo?.depositoMittenteCode)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.senderInfo.depositoMittenteCode', value)} 
-                        />
-                        <DetailItem 
-                          label="Indirizzo" 
-                          value={getCurrentValue('edasData.senderInfo.address', trip.edasData.senderInfo?.address)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.senderInfo.address', value)} 
-                          type="textarea"
-                        />
-                      </div>
-                    </div>
-                  </section>
-
-                  <section>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-6 pb-2 border-b-2 border-blue-100">
-                      Informazioni Destinatario
-                    </h3>
-                    <div className="bg-blue-50 rounded-lg p-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-                        <DetailItem 
-                          label="Nome" 
-                          value={getCurrentValue('edasData.recipientInfo.name', trip.edasData.recipientInfo?.name)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.recipientInfo.name', value)} 
-                        />
-                        <DetailItem 
-                          label="Indirizzo" 
-                          value={getCurrentValue('edasData.recipientInfo.address', trip.edasData.recipientInfo?.address)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.recipientInfo.address', value)} 
-                          type="textarea"
-                        />
-                        <DetailItem 
-                          label="Codice Fiscale" 
-                          value={getCurrentValue('edasData.recipientInfo.taxCode', trip.edasData.recipientInfo?.taxCode)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.recipientInfo.taxCode', value)} 
-                        />
-                      </div>
-                    </div>
-                  </section>
-
-                  <section>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-6 pb-2 border-b-2 border-purple-100">
-                      Informazioni Prodotto
-                    </h3>
-                    <div className="bg-purple-50 rounded-lg p-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-                        <DetailItem 
-                          label="Codice Prodotto" 
-                          value={getCurrentValue('edasData.productInfo.productCode', trip.edasData.productInfo?.productCode)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.productInfo.productCode', value)} 
-                        />
-                        <DetailItem 
-                          label="Descrizione" 
-                          value={getCurrentValue('edasData.productInfo.description', trip.edasData.productInfo?.description)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.productInfo.description', value)} 
-                          type="textarea"
-                        />
-                        <DetailItem 
-                          label="Codice UN" 
-                          value={getCurrentValue('edasData.productInfo.unCode', trip.edasData.productInfo?.unCode)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.productInfo.unCode', value)} 
-                        />
-                        <DetailItem 
-                          label="Peso Netto (kg)" 
-                          value={getCurrentValue('edasData.productInfo.netWeightKg', trip.edasData.productInfo?.netWeightKg)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.productInfo.netWeightKg', value)} 
-                          type="number"
-                        />
-                        <DetailItem 
-                          label="Volume a Temp. Ambiente (L)" 
-                          value={getCurrentValue('edasData.productInfo.volumeAtAmbientTempL', trip.edasData.productInfo?.volumeAtAmbientTempL)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.productInfo.volumeAtAmbientTempL', value)} 
-                          type="number"
-                        />
-                        <DetailItem 
-                          label="Volume a 15°C (L)" 
-                          value={getCurrentValue('edasData.productInfo.volumeAt15CL', trip.edasData.productInfo?.volumeAt15CL)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.productInfo.volumeAt15CL', value)} 
-                          type="number"
-                        />
-                        <DetailItem 
-                          label="Densità a Temp. Ambiente" 
-                          value={getCurrentValue('edasData.productInfo.densityAtAmbientTemp', trip.edasData.productInfo?.densityAtAmbientTemp)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.productInfo.densityAtAmbientTemp', value)} 
-                          type="number"
-                        />
-                        <DetailItem 
-                          label="Densità a 15°C" 
-                          value={getCurrentValue('edasData.productInfo.densityAt15C', trip.edasData.productInfo?.densityAt15C)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.productInfo.densityAt15C', value)} 
-                          type="number"
-                        />
-                      </div>
-                    </div>
-                  </section>
-
-                  <section>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-6 pb-2 border-b-2 border-orange-100">
-                      Informazioni Trasporto
-                    </h3>
-                    <div className="bg-orange-50 rounded-lg p-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-                        <DetailItem 
-                          label="Modalità di Trasporto" 
-                          value={getCurrentValue('edasData.transportInfo.transportMode', trip.edasData.transportInfo?.transportMode)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.transportInfo.transportMode', value)} 
-                        />
-                        <DetailItem 
-                          label="Tipo Veicolo" 
-                          value={getCurrentValue('edasData.transportInfo.vehicleType', trip.edasData.transportInfo?.vehicleType)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.transportInfo.vehicleType', value)} 
-                        />
-                        <DetailItem 
-                          label="ID Veicolo" 
-                          value={getCurrentValue('edasData.transportInfo.vehicleId', trip.edasData.transportInfo?.vehicleId)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.transportInfo.vehicleId', value)} 
-                        />
-                        <DetailItem 
-                          label="Durata Stimata" 
-                          value={getCurrentValue('edasData.transportInfo.estimatedDuration', trip.edasData.transportInfo?.estimatedDuration)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.transportInfo.estimatedDuration', value)} 
-                        />
-                        <DetailItem 
-                          label="Primo Vettore" 
-                          value={getCurrentValue('edasData.transportInfo.firstCarrierName', trip.edasData.transportInfo?.firstCarrierName)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.transportInfo.firstCarrierName', value)} 
-                        />
-                        <DetailItem 
-                          label="ID Primo Vettore" 
-                          value={getCurrentValue('edasData.transportInfo.firstCarrierId', trip.edasData.transportInfo?.firstCarrierId)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.transportInfo.firstCarrierId', value)} 
-                        />
-                        <DetailItem 
-                          label="Nome Autista" 
-                          value={getCurrentValue('edasData.transportInfo.driverName', trip.edasData.transportInfo?.driverName)} 
-                          isEditable 
-                          onEdit={(value) => handleFieldEdit('edasData.transportInfo.driverName', value)} 
-                        />
-                      </div>
-                    </div>
-                  </section>
-                </>
-              ) : (
-                <div className="text-center py-12">
-                  <Package className="h-16 w-16 mx-auto text-gray-300 mb-4" />
-                  <p className="text-lg text-gray-500">Nessun dato EDAS disponibile per questo viaggio.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'loading' && (
-            <div className="p-6 space-y-8">
-              {trip.loadingNoteData ? (
-                <section>
-                  <h3 className="text-xl font-semibold text-gray-900 mb-6 pb-2 border-b-2 border-indigo-100">
-                    Bolla di Carico
-                  </h3>
-                  <div className="bg-gray-50 rounded-lg p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-                      <DetailItem 
-                        label="Numero Documento" 
-                        value={getCurrentValue('loadingNoteData.documentNumber', trip.loadingNoteData.documentNumber)} 
-                        isEditable 
-                        onEdit={(value) => handleFieldEdit('loadingNoteData.documentNumber', value)} 
-                      />
-                      <DetailItem 
-                        label="Data di Carico" 
-                        value={getCurrentValue('loadingNoteData.loadingDate', trip.loadingNoteData.loadingDate)} 
-                        isEditable 
-                        onEdit={(value) => handleFieldEdit('loadingNoteData.loadingDate', value)} 
-                        type="date"
-                      />
-                      <DetailItem 
-                        label="Nome Vettore" 
-                        value={getCurrentValue('loadingNoteData.carrierName', trip.loadingNoteData.carrierName)} 
-                        isEditable 
-                        onEdit={(value) => handleFieldEdit('loadingNoteData.carrierName', value)} 
-                      />
-                      <DetailItem 
-                        label="Nome Spedizioniere" 
-                        value={getCurrentValue('loadingNoteData.shipperName', trip.loadingNoteData.shipperName)} 
-                        isEditable 
-                        onEdit={(value) => handleFieldEdit('loadingNoteData.shipperName', value)} 
-                      />
-                      <DetailItem 
-                        label="Nome Destinatario" 
-                        value={getCurrentValue('loadingNoteData.consigneeName', trip.loadingNoteData.consigneeName)} 
-                        isEditable 
-                        onEdit={(value) => handleFieldEdit('loadingNoteData.consigneeName', value)} 
-                      />
-                      <DetailItem 
-                        label="Descrizione Prodotto" 
-                        value={getCurrentValue('loadingNoteData.productDescription', trip.loadingNoteData.productDescription)} 
-                        isEditable 
-                        onEdit={(value) => handleFieldEdit('loadingNoteData.productDescription', value)} 
-                        type="textarea"
-                      />
-                      <DetailItem 
-                        label="Peso Lordo (kg)" 
-                        value={getCurrentValue('loadingNoteData.grossWeightKg', trip.loadingNoteData.grossWeightKg)} 
-                        isEditable 
-                        onEdit={(value) => handleFieldEdit('loadingNoteData.grossWeightKg', value)} 
-                        type="number"
-                      />
-                      <DetailItem 
-                        label="Peso Netto (kg)" 
-                        value={getCurrentValue('loadingNoteData.netWeightKg', trip.loadingNoteData.netWeightKg)} 
-                        isEditable 
-                        onEdit={(value) => handleFieldEdit('loadingNoteData.netWeightKg', value)} 
-                        type="number"
-                      />
-                      <DetailItem 
-                        label="Volume (L)" 
-                        value={getCurrentValue('loadingNoteData.volumeLiters', trip.loadingNoteData.volumeLiters)} 
-                        isEditable 
-                        onEdit={(value) => handleFieldEdit('loadingNoteData.volumeLiters', value)} 
-                        type="number"
-                      />
-                      <DetailItem 
-                        label="Note" 
-                        value={getCurrentValue('loadingNoteData.notes', trip.loadingNoteData.notes)} 
-                        isEditable 
-                        onEdit={(value) => handleFieldEdit('loadingNoteData.notes', value)} 
-                        type="textarea"
-                      />
-                    </div>
-                  </div>
-                </section>
-              ) : (
-                <div className="text-center py-12">
-                  <Truck className="h-16 w-16 mx-auto text-gray-300 mb-4" />
-                  <p className="text-lg text-gray-500">Nessun dato della bolla di carico disponibile per questo viaggio.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'validation' && (
-            <div className="p-6 space-y-8">
-              <section>
-                <h3 className="text-xl font-semibold text-gray-900 mb-6 pb-2 border-b-2 border-indigo-100">
-                  Risultati Validazione
-                </h3>
-                {trip.validationResults && trip.validationResults.length > 0 ? (
-                  <div className="space-y-4">
-                    {trip.validationResults.map((result, index) => (
-                      <ValidationBadge key={index} result={result} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <CheckCircle className="h-16 w-16 mx-auto text-gray-300 mb-4" />
-                    <p className="text-lg text-gray-500">Nessun risultato di validazione disponibile per questo viaggio.</p>
-                  </div>
-                )}
-              </section>
             </div>
           )}
 
