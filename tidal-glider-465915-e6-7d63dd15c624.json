@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "tidal-glider-465915-e6",
+  "private_key_id": "7d63dd15c624b3457e06c910a0d7dc673ba6052c",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDe/yzB0QYpNsz5\nbptzjiAzEfULlRJxK12JAWdeRiGO+SwLHrRDjKyipuEbjSTG0yrfcto6OceIz4qW\ncA3F2p+yHlU+MXBZKqOPbqcwWSBoOn8mNiCG4EenoZ/MAG8vNYzfrehK5sdD0/jl\nudirg35M0zS+XnQPCMX5o1h2BtEpgeR5+EknmxWu6S4aKP+L8FBHTIci00W4Eh8Q\ncb+piqSC/avV4Q1fBZM2qXZR8AMWs3Tpha+moUeZCE9jgF6j9MG0r+pU2NbaKGwh\ng9jHYd7k/et0fsSZZpf10Jn1uCPmteBTL7Yg5aJhelKhtIunsv3kPwxOSokbzUt3\nZ+raf5pzAgMBAAECggEAQPISh/QnljNGqVKkZZg8GoOdWZ01/M3DdRZ6k4NbXLeH\nM0ni+FVtJgXyQ8LsthdkQiXCFvki+t5vH3dNG5WbsxWQgAeIEAASGMECYltiy9hV\nlbxn5sBFPjYdQx3RQ++VssOEhuQFnuSKdeWVjAZE730HvHXn2UUV26nOJrm/ixWl\nSs0BcQix9C4Jj5Pq5qoI94kGfQc83CVDQlEqnFwdbpEz4kdMbHElZjF1mi44iKBe\n5l6PUqe1ZTtEQ5VTAp0PnYKrvBh7SAHTDIZTixGP6VfFwTIwXSozxzFEET46q/Ca\nqaCd3CxW/m9auOkH15+bEuOACuI04fDEZwsnQWUu4QKBgQD1d37w5CpcM/YNrfSP\nqGfcUKGF7dfNL3ZepcCgTo/Z6wm1jJgq/TM0UP+OzYKUTGkFtfl/1DKeem/DXQlc\nToBE/01ws9iWZL8VE3M/+K8Sfa6oXTmVDuL/4pAaRUKSes8dWfzQEs3tE0ESdPsG\nus3M9mqNXrcf+3kJaXphvl/7kQKBgQDokNdcjgmcdTIq9NslKUcWJoXn83CyES8U\neiMZ1fy9LBHPzM2P/ngs4NLhsBLId3ilYINFkuXeQn3dArOZCO/j72OO52YqpMut\nlhLZaLXKJs0Do0uMjOhA/1j5AoZjX/llhuwrUZ7m06F9HdO0DBzvw/1PcBa/Kf2c\nM2hf4vfLwwKBgH7b6QD6CmJogEuFkZUFBdg426Fp0FO8qcI0i57Nu052SChJpwLg\npKvvCIR29XtLGiPXbkCAHEEHKeefl4zbDTObdhw+9jqTiqWLzc5L6b72sWNV+sJs\nVSjFoI/TJ5qoWY3jyeKHNWHGx6SQTIOn22CIIX06bA3dWypgFt2ZE+XhAoGAK4m6\nF6SrnfO+wZX3VLymhzoNBYBoj51x7+ZxncuWth+C8iEINrXP767jK8cXrRnYpzUr\nPiIjEHnoMDDqSHMI3eYaAE3HraIOU1/uBW954O9koBK4+QYEEO78zBkx6Xa1LNGW\ncwGjutjRuaeU03cVD7nkOTPlvkHxLYXeO101QJsCgYEAtP/IGyxV6us2OrzHXK5X\n1hSYfTwggSc1H/xMHcLoYhRgQnxtAJjfanKSFgWrtbJdyNXiD1zW35W/oydw3fI0\nHjhmWT3XJMl9zZErh3DxeVdWZWxx7KGuRM9nI5LtJWC3pPpUAtlM5AbaoJRsPqGs\nH6qZTGABam7FQQDpM1ntnUM=\n-----END PRIVATE KEY-----\n",
+  "client_email": "petrolisocr@tidal-glider-465915-e6.iam.gserviceaccount.com",
+  "client_id": "105711408681513073424",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/petrolisocr%40tidal-glider-465915-e6.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
