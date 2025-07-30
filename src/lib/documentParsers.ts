@@ -158,6 +158,15 @@ export async function parseLoadingNote(base64Image: string, mimeType: string): P
       notes: `Autista: ${findFieldValue(['autista'], fieldMap, entityMap) || 'N/A'} | ` +
              `Densità 15°C: ${findFieldValue(['densita-15'], fieldMap, entityMap) || 'N/A'} | ` +
              `Densità ambiente: ${findFieldValue(['densita-ambiente'], fieldMap, entityMap) || 'N/A'}`,
+      
+      // Campi aggiuntivi dalle entità estratte
+      densityAt15C: parseNumber(findFieldValue(['densita-15'], fieldMap, entityMap)) || 0,
+      committenteName: findFieldValue(['committente'], fieldMap, entityMap) || '',
+      companyName: findFieldValue(['societa'], fieldMap, entityMap) || '',
+      depotLocation: findFieldValue(['deposito'], fieldMap, entityMap) || '',
+      supplierLocation: findFieldValue(['fornitore'], fieldMap, entityMap) || '',
+      driverName: findFieldValue(['autista'], fieldMap, entityMap) || '',
+      destinationName: findFieldValue(['destinatario'], fieldMap, entityMap) || '',
     };
 
     // If netWeightKg is 0, use grossWeightKg
@@ -176,6 +185,13 @@ export async function parseLoadingNote(base64Image: string, mimeType: string): P
     console.log('Gross Weight (kg):', parsedData.grossWeightKg);
     console.log('Net Weight (kg):', parsedData.netWeightKg);
     console.log('Volume (liters):', parsedData.volumeLiters);
+    console.log('Driver Name:', parsedData.driverName);
+    console.log('Density at 15°C:', parsedData.densityAt15C);
+    console.log('Committente:', parsedData.committenteName);
+    console.log('Company Name:', parsedData.companyName);
+    console.log('Depot Location:', parsedData.depotLocation);
+    console.log('Supplier Location:', parsedData.supplierLocation);
+    console.log('Destination Name:', parsedData.destinationName);
     console.log('Notes length:', parsedData.notes.length);
     console.log('===============================');
 
@@ -390,15 +406,18 @@ export async function parseEdas(base64Image: string, mimeType: string): Promise<
         depositoMittenteCode: findFieldValue(['deposito-mittente'], fieldMap, entityMap) || '',
         name: findFieldValue(['nome', 'name', 'sender'], fieldMap, entityMap) || extractFirstValue(entityMap['organization']) || '',
         address: findFieldValue(['indirizzo', 'address'], fieldMap, entityMap) || '',
+        organizationName: extractFirstValue(entityMap['organization']) || '', // ENI SPA, etc.
       },
       depositorInfo: {
         name: findFieldValue(['depositante'], fieldMap, entityMap) || '',
         id: findFieldValue(['id', 'codice'], fieldMap, entityMap) || '',
+        location: extractFirstValue(entityMap['location']) || '', // VILLA S. LUCIA, etc.
       },
       recipientInfo: {
         name: findFieldValue(['destinatario'], fieldMap, entityMap) || extractFirstValue(entityMap['person']) || '',
         address: findFieldValue(['indirizzo', 'address'], fieldMap, entityMap) || '',
         taxCode: findFieldValue(['impianto-ricevente'], fieldMap, entityMap) || '',
+        facilityCode: findFieldValue(['impianto-ricevente'], fieldMap, entityMap) || '', // codice impianto ricevente
       },
       transportInfo: {
         transportManager: findFieldValue(['gestore', 'manager'], fieldMap, entityMap) || '',
@@ -427,10 +446,15 @@ export async function parseEdas(base64Image: string, mimeType: string): Promise<
     console.log('DAS Number:', parsedData.documentInfo.dasNumber);
     console.log('Invoice Date:', parsedData.documentInfo.invoiceDate);
     console.log('Sender Name:', parsedData.senderInfo.name);
+    console.log('Organization Name:', parsedData.senderInfo.organizationName);
+    console.log('Depositor Location:', parsedData.depositorInfo.location);
     console.log('Recipient Name:', parsedData.recipientInfo.name);
+    console.log('Facility Code:', parsedData.recipientInfo.facilityCode);
     console.log('Product Description:', parsedData.productInfo.description);
     console.log('Net Weight (kg):', parsedData.productInfo.netWeightKg);
     console.log('Volume at 15°C (L):', parsedData.productInfo.volumeAt15CL);
+    console.log('Volume at Ambient Temp (L):', parsedData.productInfo.volumeAtAmbientTempL);
+    console.log('Density at Ambient Temp:', parsedData.productInfo.densityAtAmbientTemp);
     console.log('Density at 15°C:', parsedData.productInfo.densityAt15C);
     console.log('Driver Name:', parsedData.transportInfo.driverName);
     console.log('Vehicle ID:', parsedData.transportInfo.vehicleId);

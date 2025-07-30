@@ -16,6 +16,7 @@ import {
 import CreateOrderModal from './CreateOrderModal';
 import CreateDriverModal from './CreateDriverModal';
 import CreateOperatorModal from './CreateOperatorModal';
+import CreateInvoiceManagerModal from './CreateInvoiceManagerModal';
 import AssignTripModal from './AssignTripModal';
 import ManageOrderModal from './ManageOrderModal';
 import ImageViewerModal from './ImageViewerModal';
@@ -32,6 +33,7 @@ export default function AdminDashboard() {
   const [showCreateOrder, setShowCreateOrder] = useState(false);
   const [showCreateDriver, setShowCreateDriver] = useState(false);
   const [showCreateOperator, setShowCreateOperator] = useState(false);
+  const [showCreateInvoiceManager, setShowCreateInvoiceManager] = useState(false);
   const [showAssignTrip, setShowAssignTrip] = useState(false);
   const [showManageOrder, setShowManageOrder] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
@@ -94,7 +96,7 @@ export default function AdminDashboard() {
               <h1 className="text-3xl font-bold tracking-tight text-gray-900">
                 Dashboard Admin
               </h1>
-              <p className="text-gray-600">Benvenuto, {userProfile?.name}</p>
+              <p className="text-gray-600">Ciao {userProfile?.name}</p>
             </div>
             <button
               onClick={logout}
@@ -215,6 +217,13 @@ export default function AdminDashboard() {
             Crea Operatore
           </button>
           <button
+            onClick={() => setShowCreateInvoiceManager(true)}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
+          >
+            <UserPlus className="w-4 h-4 mr-2" />
+            Crea Gestore Fatture
+          </button>
+          <button
             onClick={() => {
               const dataToExport = trips.map(trip => {
                 let dateString = '';
@@ -299,6 +308,12 @@ export default function AdminDashboard() {
       {showCreateOperator && (
         <CreateOperatorModal 
           onClose={() => setShowCreateOperator(false)}
+        />
+      )}
+
+      {showCreateInvoiceManager && (
+        <CreateInvoiceManagerModal 
+          onClose={() => setShowCreateInvoiceManager(false)}
         />
       )}
 
