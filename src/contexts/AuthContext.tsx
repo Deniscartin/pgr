@@ -17,8 +17,8 @@ interface AuthContextType {
   userProfile: User | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  createUser: (email: string, password: string, name: string, role: UserRole) => Promise<void>;
-  createUserAsAdmin: (email: string, password: string, name: string, role: UserRole) => Promise<void>;
+  createUser: (email: string, password: string, name: string, role: UserRole, carrier?: string) => Promise<void>;
+  createUserAsAdmin: (email: string, password: string, name: string, role: UserRole, carrier?: string) => Promise<void>;
   refreshUserProfile: () => Promise<void>;
   loading: boolean;
 }
@@ -52,6 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             email: user.email!,
             name: userData.name,
             role: userData.role,
+            carrier: userData.carrier,
+            qrCode: userData.qrCode,
             createdAt: userData.createdAt?.toDate() || new Date(),
             updatedAt: userData.updatedAt?.toDate() || new Date(),
           });
@@ -74,22 +76,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signOut(auth);
   };
 
-  const createUser = async (email: string, password: string, name: string, role: UserRole) => {
+  const createUser = async (email: string, password: string, name: string, role: UserRole, carrier?: string) => {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
 
     // Create user profile in Firestore
-    await setDoc(doc(db, 'users', user.uid), {
+    const userData: any = {
       name,
       role,
       email,
       createdAt: new Date(),
       updatedAt: new Date(),
-    });
+    };
+    
+    if (carrier) {
+      userData.carrier = carrier;
+    }
+    
+    await setDoc(doc(db, 'users', user.uid), userData);
   };
 
   // Funzione per creare utenti come admin senza perdere la sessione corrente
-  const createUserAsAdmin = async (email: string, password: string, name: string, role: UserRole) => {
+  const createUserAsAdmin = async (email: string, password: string, name: string, role: UserRole, carrier?: string) => {
     // Salva l'utente attualmente autenticato
     const currentAuthUser = auth.currentUser;
     
@@ -98,13 +106,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const newUser = userCredential.user;
 
     // Create user profile in Firestore
-    await setDoc(doc(db, 'users', newUser.uid), {
+    const userData: any = {
       name,
       role,
       email,
       createdAt: new Date(),
       updatedAt: new Date(),
-    });
+    };
+    
+    if (carrier) {
+      userData.carrier = carrier;
+    }
+    
+    await setDoc(doc(db, 'users', newUser.uid), userData);
 
     // Fai logout del nuovo utente e riautentica l'admin
     await signOut(auth);
@@ -126,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: userData.email,
           name: userData.name,
           role: userData.role,
+          carrier: userData.carrier,
           qrCode: userData.qrCode,
           createdAt: userData.createdAt?.toDate() || new Date(),
           updatedAt: userData.updatedAt?.toDate() || new Date(),

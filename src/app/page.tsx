@@ -5,6 +5,7 @@ import LoginForm from '@/components/LoginForm';
 import AdminDashboard from '@/components/AdminDashboard';
 import DriverDashboard from '@/components/DriverDashboard';
 import OperatorDashboard from '@/components/OperatorDashboard';
+import InvoiceDashboard from '@/components/InvoiceDashboard';
 
 export default function Home() {
   const { currentUser, userProfile, loading } = useAuth();
@@ -32,6 +33,8 @@ export default function Home() {
     return <DriverDashboard />;
   } else if (userProfile.role === 'operatore') {
     return <OperatorDashboard />;
+  } else if (userProfile.role === 'gestore_fatture') {
+    return <InvoiceDashboard />;
   }
 
   // Fallback for unknown roles

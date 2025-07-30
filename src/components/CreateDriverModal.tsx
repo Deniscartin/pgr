@@ -6,9 +6,10 @@ import { X, User } from 'lucide-react';
 
 interface CreateDriverModalProps {
   onClose: () => void;
+  operatorCarrier?: string; // Vettore dell'operatore, se passato dall'operatore
 }
 
-export default function CreateDriverModal({ onClose }: CreateDriverModalProps) {
+export default function CreateDriverModal({ onClose, operatorCarrier }: CreateDriverModalProps) {
   const { createUserAsAdmin } = useAuth();
   
   const [formData, setFormData] = useState({
@@ -16,6 +17,7 @@ export default function CreateDriverModal({ onClose }: CreateDriverModalProps) {
     email: '',
     password: '',
     confirmPassword: '',
+    carrier: operatorCarrier || '',
   });
   
   const [loading, setLoading] = useState(false);
@@ -46,7 +48,7 @@ export default function CreateDriverModal({ onClose }: CreateDriverModalProps) {
     setLoading(true);
     
     try {
-      await createUserAsAdmin(formData.email, formData.password, formData.name, 'autista');
+      await createUserAsAdmin(formData.email, formData.password, formData.name, 'autista', formData.carrier);
       onClose();
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'code' in error) {
@@ -125,6 +127,28 @@ export default function CreateDriverModal({ onClose }: CreateDriverModalProps) {
               value={formData.email}
               onChange={handleInputChange}
             />
+          </div>
+
+          <div>
+            <label htmlFor="carrier" className="block text-sm font-medium text-gray-700">
+              Vettore *
+            </label>
+            <input
+              type="text"
+              id="carrier"
+              name="carrier"
+              required
+              className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="MP, GNC, etc."
+              value={formData.carrier}
+              onChange={handleInputChange}
+              disabled={!!operatorCarrier} // Disabilita se il vettore è passato dall'operatore
+            />
+            {operatorCarrier && (
+              <p className="mt-1 text-xs text-gray-500">
+                Il vettore è preimpostato dal tuo account operatore
+              </p>
+            )}
           </div>
 
           <div>

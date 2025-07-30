@@ -12,7 +12,7 @@ import {
   deleteDoc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Order, Trip, User } from '@/lib/types';
+import { Order, Trip, User, InvoiceData, PriceCheck } from '@/lib/types';
 
 // Hook per gestire gli ordini
 export function useOrders() {
@@ -126,25 +126,158 @@ export function useTrips(driverId?: string) {
 }
 
 // Hook per gestire gli utenti autisti
-export function useDrivers() {
+export function useDrivers(carrier?: string) {
   const [drivers, setDrivers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, 'users'), where('role', '==', 'autista'));
+    // Se non c'è carrier specificato, restituisce tutti gli autisti (per admin)
+    // Se c'è carrier specificato, filtra solo per quel carrier
+    if (carrier) {
+      const q = query(
+        collection(db, 'users'), 
+        where('role', '==', 'autista'), 
+        where('carrier', '==', carrier)
+      );
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const driversData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate() || new Date(),
+          updatedAt: doc.data().updatedAt?.toDate() || new Date(),
+        })) as User[];
+        setDrivers(driversData);
+        setLoading(false);
+      });
+
+      return unsubscribe;
+    } else {
+      // Per admin - mostra tutti gli autisti
+      const q = query(collection(db, 'users'), where('role', '==', 'autista'));
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const driversData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate() || new Date(),
+          updatedAt: doc.data().updatedAt?.toDate() || new Date(),
+        })) as User[];
+        setDrivers(driversData);
+        setLoading(false);
+      });
+
+      return unsubscribe;
+    }
+  }, [carrier]);
+
+  return { drivers, loading };
+}
+
+// Hook per gestire le fatture
+export function useInvoices(invoiceType?: 'attivo' | 'passivo') {
+  const [invoices, setInvoices] = useState<InvoiceData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let q = query(collection(db, 'invoices'), orderBy('createdAt', 'desc'));
+    
+    if (invoiceType) {
+      q = query(collection(db, 'invoices'), where('invoiceType', '==', invoiceType), orderBy('createdAt', 'desc'));
+    }
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const driversData = snapshot.docs.map(doc => ({
+      const invoicesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+        updatedAt: doc.data().updatedAt?.toDate() || new Date(),
+      })) as InvoiceData[];
+      setInvoices(invoicesData);
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, [invoiceType]);
+
+  const addInvoice = async (invoiceData: Omit<InvoiceData, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const docRef = await addDoc(collection(db, 'invoices'), {
+      ...invoiceData,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+    return { id: docRef.id };
+  };
+
+  const updateInvoice = async (id: string, invoiceData: Partial<InvoiceData>) => {
+    await updateDoc(doc(db, 'invoices', id), {
+      ...invoiceData,
+      updatedAt: Timestamp.now(),
+    });
+  };
+
+  const deleteInvoice = async (id: string) => {
+    await deleteDoc(doc(db, 'invoices', id));
+  };
+
+  return { invoices, loading, addInvoice, updateInvoice, deleteInvoice };
+}
+
+// Hook per gestire gli utenti gestore fatture  
+export function useInvoiceManagers() {
+  const [invoiceManagers, setInvoiceManagers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, 'users'), where('role', '==', 'gestore_fatture'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const managersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
         createdAt: doc.data().createdAt?.toDate() || new Date(),
         updatedAt: doc.data().updatedAt?.toDate() || new Date(),
       })) as User[];
-      setDrivers(driversData);
+      setInvoiceManagers(managersData);
       setLoading(false);
     });
 
     return unsubscribe;
   }, []);
 
-  return { drivers, loading };
+  return { invoiceManagers, loading };
+}
+
+// Hook per gestire i controlli prezzi
+export function usePriceChecks() {
+  const [priceChecks, setPriceChecks] = useState<PriceCheck[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, 'priceChecks'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const priceChecksData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+      })) as PriceCheck[];
+      setPriceChecks(priceChecksData);
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  const addPriceCheck = async (priceCheckData: Omit<PriceCheck, 'id' | 'createdAt'>) => {
+    const docRef = await addDoc(collection(db, 'priceChecks'), {
+      ...priceCheckData,
+      createdAt: Timestamp.now(),
+    });
+    return { id: docRef.id };
+  };
+
+  const deletePriceCheck = async (id: string) => {
+    await deleteDoc(doc(db, 'priceChecks', id));
+  };
+
+  return { priceChecks, loading, addPriceCheck, deletePriceCheck };
 } 
