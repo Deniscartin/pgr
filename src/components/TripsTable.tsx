@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { Trip, Order } from '@/lib/types';
-import { Search, ChevronLeft, ChevronRight, Filter, Calendar, User, FileText, Trash2 } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Filter, Calendar, User, FileText, Trash2, Truck } from 'lucide-react';
 
 interface TripsTableProps {
   trips: Trip[];
@@ -13,14 +13,14 @@ interface TripsTableProps {
 
 export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip }: TripsTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [carrierFilter, setCarrierFilter] = useState('all');
   const [driverFilter, setDriverFilter] = useState('all');
   const [dateFromFilter, setDateFromFilter] = useState('');
   const [dateToFilter, setDateToFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const tripStatusOptions = ['all', 'assegnato', 'in_corso', 'completato', 'annullato', 'elaborazione'];
+
   
   // Get unique drivers for filter
   const uniqueDrivers = useMemo(() => {
@@ -28,12 +28,18 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
     return drivers.sort();
   }, [trips]);
 
+  // Get unique carriers for filter
+  const uniqueCarriers = useMemo(() => {
+    const carriers = [...new Set(trips.map(trip => trip.loadingNoteData?.carrierName).filter(Boolean))];
+    return carriers.sort();
+  }, [trips]);
+
   const filteredAndSortedTrips = useMemo(() => {
     let filtered = trips;
 
-    // Status filter
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(trip => trip.status === statusFilter);
+    // Carrier filter
+    if (carrierFilter !== 'all') {
+      filtered = filtered.filter(trip => trip.loadingNoteData?.carrierName === carrierFilter);
     }
 
     // Driver filter
@@ -66,7 +72,8 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
           order?.orderNumber?.toLowerCase().includes(lowercasedSearchTerm) ||
           order?.customerName?.toLowerCase().includes(lowercasedSearchTerm) ||
           trip.edasData?.documentInfo?.dasNumber?.toLowerCase().includes(lowercasedSearchTerm) ||
-          trip.edasData?.productInfo?.description?.toLowerCase().includes(lowercasedSearchTerm)
+          trip.edasData?.productInfo?.description?.toLowerCase().includes(lowercasedSearchTerm) ||
+          trip.loadingNoteData?.carrierName?.toLowerCase().includes(lowercasedSearchTerm)
         );
       });
     }
@@ -77,7 +84,7 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
       const dateB = b.createdAt ? (b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt as any).getTime()) : 0;
       return dateB - dateA;
     });
-  }, [trips, orders, searchTerm, statusFilter, driverFilter, dateFromFilter, dateToFilter]);
+  }, [trips, orders, searchTerm, carrierFilter, driverFilter, dateFromFilter, dateToFilter]);
 
   const totalPages = Math.ceil(filteredAndSortedTrips.length / itemsPerPage);
   const paginatedTrips = filteredAndSortedTrips.slice(
@@ -93,7 +100,7 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
 
   const clearFilters = () => {
     setSearchTerm('');
-    setStatusFilter('all');
+    setCarrierFilter('all');
     setDriverFilter('all');
     setDateFromFilter('');
     setDateToFilter('');
@@ -127,7 +134,7 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
             </div>
             <input
               type="text"
-              placeholder="Cerca per autista, ordine, cliente, DAS, prodotto..."
+              placeholder="Cerca per autista, ordine, cliente, DAS, prodotto, vettore..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
@@ -136,23 +143,22 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
 
           {/* Filter Row */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Status Filter */}
+            {/* Carrier Filter */}
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Filter className="h-5 w-5 text-gray-400" />
+                <Truck className="h-5 w-5 text-gray-400" />
               </div>
               <select
-                value={statusFilter}
+                value={carrierFilter}
                 onChange={(e) => {
-                  setStatusFilter(e.target.value);
+                  setCarrierFilter(e.target.value);
                   setCurrentPage(1);
                 }}
                 className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               >
-                {tripStatusOptions.map(status => (
-                  <option key={status} value={status}>
-                    {status === 'all' ? 'Tutti gli stati' : status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}
-                  </option>
+                <option value="all">Tutti i vettori</option>
+                {uniqueCarriers.map(carrier => (
+                  <option key={carrier} value={carrier}>{carrier}</option>
                 ))}
               </select>
             </div>
@@ -229,7 +235,7 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prodotto</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stato</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validazione</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vettore</th>
                 <th scope="col" className="relative px-6 py-3">
                   <span className="sr-only">Azioni</span>
                 </th>
@@ -239,18 +245,17 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
               {paginatedTrips.map((trip) => {
                 const order = orders.find(o => o.id === trip.orderId);
                 const createdAt = trip.createdAt ? (trip.createdAt instanceof Date ? trip.createdAt : new Date(trip.createdAt as any)) : null;
-                const hasValidationErrors = trip.validationResults?.some(result => result.severity === 'error');
-                const hasValidationWarnings = trip.validationResults?.some(result => result.severity === 'warning');
+
                 
                 return (
                   <tr key={trip.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => onViewDetails(trip)}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
-                        {trip.edasData?.documentInfo?.dasNumber || trip.id.substring(0,8) + '...'}
+                        {trip.loadingNoteData?.documentNumber || trip.id.substring(0,8) + '...'}
                       </div>
-                      <div className="text-sm text-gray-500">
+                      {/* <div className="text-sm text-gray-500">
                         {order?.orderNumber || 'N/A'}
-                      </div>
+                      </div> */}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{trip.driverName}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -279,22 +284,8 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {createdAt ? createdAt.toLocaleDateString('it-IT') : 'N/A'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {hasValidationErrors ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          Errori
-                        </span>
-                      ) : hasValidationWarnings ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                          Avvisi
-                        </span>
-                      ) : trip.validationResults?.length ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          OK
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {trip.loadingNoteData?.carrierName || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">

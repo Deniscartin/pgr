@@ -189,7 +189,7 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
               Dettagli Viaggio
             </h2>
             <p className="text-sm text-gray-600">
-              Numero EDAS: {getCurrentValue('edasData.documentInfo.dasNumber', trip.edasData?.documentInfo?.dasNumber) || trip.id.substring(0, 8) + '...'}
+              Numero EDAS: {getCurrentValue('loadingNoteData.documentInfo.dasNumber', trip.loadingNoteData?.documentNumber) || trip.id.substring(0, 8) + '...'}
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-full transition-colors">
@@ -293,15 +293,15 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
                     <DetailItem 
                       label="Società" 
-                      value={getCurrentValue('loadingNoteData.consigneeName', trip.loadingNoteData?.consigneeName)} 
+                      value={getCurrentValue('loadingNoteData.companyName', trip.loadingNoteData?.companyName)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('loadingNoteData.consigneeName', value)} 
+                      onEdit={(value) => handleFieldEdit('loadingNoteData.companyName', value)} 
                     />
                     <DetailItem 
                       label="Deposito" 
-                      value={getCurrentValue('loadingNoteData.shipperName', trip.loadingNoteData?.shipperName)} 
+                      value={getCurrentValue('edasData.depositorInfo.name', trip.edasData?.depositorInfo?.name)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('loadingNoteData.shipperName', value)} 
+                      onEdit={(value) => handleFieldEdit('edasData.depositorInfo.name', value)} 
                     />
                     <DetailItem 
                       label="Data" 
@@ -312,17 +312,17 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                     />
                     <DetailItem 
                       label="Cliente" 
-                      value={getCurrentValue('edasData.recipientInfo.name', trip.edasData?.recipientInfo?.name)} 
+                      value={getCurrentValue('loadingNoteData.consigneeName', trip.loadingNoteData?.consigneeName)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('edasData.recipientInfo.name', value)} 
+                      onEdit={(value) => handleFieldEdit('loadingNoteData.consigneeName', value)} 
                     />
-                    <DetailItem 
+                    {/* <DetailItem 
                       label="Destinazione" 
                       value={getCurrentValue('edasData.recipientInfo.name', trip.edasData?.recipientInfo?.name)} 
                       isEditable 
                       onEdit={(value) => handleFieldEdit('edasData.recipientInfo.name', value)} 
                       type="textarea"
-                    />
+                    /> */}
                     <DetailItem 
                       label="Prodotto" 
                       value={getCurrentValue('loadingNoteData.productDescription', trip.loadingNoteData?.productDescription)} 
@@ -339,9 +339,9 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                     />
                     <DetailItem 
                       label="Densità a 15°" 
-                      value={getCurrentValue('edasData.productInfo.volumeAt15CL', trip.edasData?.productInfo?.volumeAt15CL)} 
+                      value={getCurrentValue('loadingNoteData.densityAt15C', trip.loadingNoteData?.densityAt15C)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('edasData.productInfo.volumeAt15CL', value)} 
+                      onEdit={(value) => handleFieldEdit('loadingNoteData.densityAt15C', value)} 
                       type="number"
                     />
                     <DetailItem 
@@ -366,9 +366,9 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                     />
                     <DetailItem 
                       label="Autista" 
-                      value={getCurrentValue('edasData.transportInfo.driverName', trip.edasData?.transportInfo?.driverName || trip.driverName)} 
+                      value={getCurrentValue('loadingNoteData.driverName', trip.loadingNoteData?.driverName || trip.driverName)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('edasData.transportInfo.driverName', value)} 
+                      onEdit={(value) => handleFieldEdit('loadingNoteData.driverName', value)} 
                     />
                   </div>
                   </div>
