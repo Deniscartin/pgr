@@ -226,48 +226,19 @@ export default function AdminDashboard() {
           <button
             onClick={() => {
               const dataToExport = trips.map(trip => {
-                let dateString = '';
-                if (trip.createdAt) {
-                  try {
-                    const date = trip.createdAt instanceof Date ? trip.createdAt : new Date(trip.createdAt);
-                    dateString = date.toLocaleDateString('it-IT');
-                  } catch {
-                    dateString = 'N/A';
-                  }
-                }
-                
                 return {
-                  'ID Viaggio': trip.id,
-                  'Stato': trip.status,
-                  'Data Creazione': dateString,
-                  
-                  // Nuovi dati richiesti
-                  'Società': trip.loadingNoteData?.consigneeName || 'N/A',
-                  'Deposito': trip.loadingNoteData?.shipperName || 'N/A',
+                  'Società': trip.loadingNoteData?.companyName || 'N/A',
+                  'Deposito': trip.edasData?.depositorInfo?.name || 'N/A',
                   'Data': trip.loadingNoteData?.loadingDate || 'N/A',
-                  'Cliente': trip.loadingNoteData?.carrierName || 'N/A',
-                  'Destinazione': trip.edasData?.recipientInfo?.address || 'N/A',
+                  'Cliente': trip.loadingNoteData?.consigneeName || 'N/A',
                   'Prodotto': trip.loadingNoteData?.productDescription || 'N/A',
                   'Quantità Consegnata (LITRI)': trip.loadingNoteData?.volumeLiters || 'N/A',
-                  'Densità a 15°': trip.edasData?.productInfo?.densityAt15C || 'N/A',
+                  'Densità a 15°': trip.loadingNoteData?.densityAt15C || 'N/A',
                   'Densità Ambiente': trip.edasData?.productInfo?.densityAtAmbientTemp || 'N/A',
                   'Quantità in KG': trip.loadingNoteData?.netWeightKg || 'N/A',
-                  'Vettore': trip.edasData?.transportInfo?.firstCarrierName || 'N/A',
-                  'Autista': trip.edasData?.transportInfo?.driverName || trip.driverName || 'N/A',
-                  
-                  // Dati aggiuntivi
-                  'Codice DAS': trip.dasCode || 'N/A',
-                  'Numero DAS EDAS': trip.edasData?.documentInfo?.dasNumber || 'N/A',
-                  'Numero Fattura EDAS': trip.edasData?.documentInfo?.invoiceNumber || 'N/A',
-                  'Data Spedizione EDAS': trip.edasData?.documentInfo?.shippingDateTime || 'N/A',
-                  'Nome Mittente EDAS': trip.edasData?.senderInfo?.name || 'N/A',
-                  'Nome Destinatario EDAS': trip.edasData?.recipientInfo?.name || 'N/A',
-                  'Descrizione Prodotto EDAS': trip.edasData?.productInfo?.description || 'N/A',
-                  'Peso Netto EDAS (kg)': trip.edasData?.productInfo?.netWeightKg || 'N/A',
-                  'Nome Vettore Bolla': trip.loadingNoteData?.carrierName || 'N/A',
-                  'Data Carico Bolla': trip.loadingNoteData?.loadingDate || 'N/A',
-                  'Peso Netto Bolla (kg)': trip.loadingNoteData?.netWeightKg || 'N/A',
-                  'Volume Bolla (L)': trip.loadingNoteData?.volumeLiters || 'N/A',
+                  'Vettore': trip.loadingNoteData?.carrierName || 'N/A',
+                  'Autista': trip.loadingNoteData?.driverName || trip.driverName || 'N/A',
+                  'Numero DAS': trip.loadingNoteData?.documentNumber || 'N/A'
                 };
               });
 
