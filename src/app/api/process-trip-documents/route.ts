@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { doc, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ParsedEDASData, ParsedLoadingNoteData, ValidationResult } from '@/lib/types';
-import { parseEdas, parseLoadingNote } from '@/lib/documentParsers';
+import { parseLoadingNote } from '@/lib/documentParsers';
 
 export async function POST(request: NextRequest) {
   try {
@@ -75,21 +75,14 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    // Processa l'e-DAS
+    // e-DAS: Salva solo come immagine (nessun processamento OCR)
+    console.log('e-DAS salvato come immagine (nessun processamento OCR)');
     let edasData: ParsedEDASData | null = null;
-    try {
-      console.log('Processamento e-DAS...');
-      const { base64, mimeType } = await downloadImageAsBase64(edasImageUrl);
-      edasData = await parseEdas(base64, mimeType);
-      console.log('e-DAS processato con successo');
-    } catch (error) {
-      console.error('Errore nel processamento e-DAS:', error);
-    }
 
-    // Processa la Nota di Carico
+    // Processa solo la Nota di Carico con OCR
     let loadingNoteData: ParsedLoadingNoteData | null = null;
     try {
-      console.log('Processamento Nota di Carico...');
+      console.log('Processamento Nota di Carico con OCR...');
       const { base64, mimeType } = await downloadImageAsBase64(loadingNoteImageUrl);
       loadingNoteData = await parseLoadingNote(base64, mimeType);
       console.log('Nota di Carico processata con successo');
@@ -97,19 +90,20 @@ export async function POST(request: NextRequest) {
       console.error('Errore nel processamento Nota di Carico:', error);
     }
 
-    // Aggiorna l'ordine con i dati veri se abbiamo l'e-DAS
-    if (edasData) {
+    // Aggiorna l'ordine con i dati della Nota di Carico se disponibili
+    if (loadingNoteData) {
       try {
-        console.log('Aggiornamento ordine con dati e-DAS...');
+        console.log('Aggiornamento ordine con dati Nota di Carico...');
         const orderRef = doc(db, 'orders', tripDoc.data().orderId);
         const orderUpdateData = {
-          orderNumber: edasData.documentInfo.dasNumber,
-          product: edasData.productInfo.description,
-          customerName: edasData.recipientInfo.name,
-          customerCode: edasData.recipientInfo.taxCode,
-          deliveryAddress: edasData.recipientInfo.address,
-          quantity: edasData.productInfo.volumeAt15CL,
-          notes: `Ordine aggiornato da e-DAS ${edasData.documentInfo.dasNumber}${loadingNoteData ? ` e Nota di Carico ${loadingNoteData.documentNumber}` : ''}.`,
+          // Mantieni l'orderNumber temporaneo o usa quello della nota di carico se disponibile
+          orderNumber: loadingNoteData.documentNumber || `TEMP_${Date.now()}`,
+          product: loadingNoteData.productDescription || 'DA ESTRARRE',
+          customerName: 'DA ESTRARRE', // Nota di carico potrebbe non avere questi dati
+          customerCode: 'TEMP',
+          deliveryAddress: 'DA ESTRARRE',
+          quantity: loadingNoteData.volumeLiters || 0,
+          notes: `Ordine aggiornato da Nota di Carico ${loadingNoteData.documentNumber || 'N/A'}.`,
           updatedAt: Timestamp.now()
         };
         await updateDoc(orderRef, orderUpdateData);
@@ -119,11 +113,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validazione incrociata tra e-DAS e Nota di Carico
+    // Nessuna validazione incrociata dato che l'e-DAS non viene più processato
     let validationResults: ValidationResult[] = [];
-    if (edasData && loadingNoteData) {
-      validationResults = validateDocuments(edasData, loadingNoteData);
-    }
 
     // Aggiorna il trip con i dati processati
     const updateData: any = {
@@ -149,7 +140,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       tripId,
-      edasProcessed: !!edasData,
+      edasProcessed: false, // e-DAS salvato solo come immagine
       loadingNoteProcessed: !!loadingNoteData,
       validationResults
     });

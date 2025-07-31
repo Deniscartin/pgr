@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { X, User } from 'lucide-react';
+import { X, User, Plus, Trash2 } from 'lucide-react';
 
 interface CreateOperatorModalProps {
   onClose: () => void;
@@ -18,6 +18,7 @@ export default function CreateOperatorModal({ onClose }: CreateOperatorModalProp
     confirmPassword: '',
   });
   
+  const [carriers, setCarriers] = useState<string[]>(['']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -27,6 +28,22 @@ export default function CreateOperatorModal({ onClose }: CreateOperatorModalProp
       ...prev,
       [name]: value
     }));
+  };
+
+  const addCarrier = () => {
+    setCarriers([...carriers, '']);
+  };
+
+  const removeCarrier = (index: number) => {
+    if (carriers.length > 1) {
+      setCarriers(carriers.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateCarrier = (index: number, value: string) => {
+    const newCarriers = [...carriers];
+    newCarriers[index] = value;
+    setCarriers(newCarriers);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -46,7 +63,8 @@ export default function CreateOperatorModal({ onClose }: CreateOperatorModalProp
     setLoading(true);
     
     try {
-      await createUserAsAdmin(formData.email, formData.password, formData.name, 'operatore');
+      const validCarriers = carriers.filter(carrier => carrier.trim() !== '');
+      await createUserAsAdmin(formData.email, formData.password, formData.name, 'operatore', validCarriers.length > 0 ? validCarriers : undefined);
       onClose();
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'code' in error) {
@@ -157,6 +175,40 @@ export default function CreateOperatorModal({ onClose }: CreateOperatorModalProp
               value={formData.confirmPassword}
               onChange={handleInputChange}
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Vettori
+            </label>
+            {carriers.map((carrier, index) => (
+              <div key={index} className="flex items-center gap-2 mb-2">
+                <input
+                  type="text"
+                  className="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="Nome vettore"
+                  value={carrier}
+                  onChange={(e) => updateCarrier(index, e.target.value)}
+                />
+                {carriers.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeCarrier(index)}
+                    className="p-2 text-red-600 hover:text-red-800"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={addCarrier}
+              className="flex items-center text-sm text-indigo-600 hover:text-indigo-800"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Aggiungi vettore
+            </button>
           </div>
 
           <div className="flex justify-end space-x-3 pt-4">

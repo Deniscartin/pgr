@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { Trip, Order } from '@/lib/types';
-import { X, Image as ImageIcon, AlertTriangle, CheckCircle, Edit3, Save, AlertCircle, FileText, Truck, Package, MapPin, Download, RefreshCw } from 'lucide-react';
+import { useDrivers } from '@/hooks/useFirestore';
+import { useAuth } from '@/contexts/AuthContext';
+import { getDisplayCompanyName } from '@/lib/companyUtils';
+import { X, Image as ImageIcon, AlertTriangle, CheckCircle, Edit3, Save, AlertCircle, FileText, Truck, Package, MapPin, Download, RefreshCw, Scan } from 'lucide-react';
 
 interface TripDetailModalProps {
   isOpen: boolean;
@@ -124,10 +127,14 @@ const ValidationBadge = ({ result }: { result: any }) => {
 };
 
 export default function TripDetailModal({ isOpen, onClose, trip, order, onViewImages, onSaveChanges }: TripDetailModalProps) {
+  const { drivers } = useDrivers();
+  const { userProfile } = useAuth();
   const [activeTab, setActiveTab] = useState('general');
   const [modifiedFields, setModifiedFields] = useState<Record<string, any>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isReprocessing, setIsReprocessing] = useState(false);
+  const [reprocessingMessage, setReprocessingMessage] = useState('');
 
   useEffect(() => {
     setModifiedFields({});
@@ -179,6 +186,52 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
     return modifiedFields[fieldPath] !== undefined ? modifiedFields[fieldPath] : originalValue;
   };
 
+  // Find the driver and get their carriers
+  const currentDriver = trip ? drivers.find(d => d.id === trip.driverId) : null;
+  const driverCarriers = currentDriver?.carriers || (currentDriver?.carrier ? [currentDriver.carrier] : []);
+
+  // Reprocess documents function (admin only)
+  const handleReprocessDocuments = async () => {
+    if (!trip || !userProfile || userProfile.role !== 'admin') return;
+    
+    setIsReprocessing(true);
+    setReprocessingMessage('Riprocessamento documenti in corso...');
+    
+    try {
+      const response = await fetch('/api/reprocess-trip-documents', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ tripId: trip.id }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Errore durante il riprocessamento');
+      }
+
+      setReprocessingMessage('✅ Documenti riprocessati con successo! Ricarica la pagina per vedere le modifiche.');
+      
+      // Auto-close message after 3 seconds
+      setTimeout(() => {
+        setReprocessingMessage('');
+      }, 5000);
+
+    } catch (error) {
+      console.error('Errore durante il riprocessamento:', error);
+      setReprocessingMessage(`❌ Errore: ${error instanceof Error ? error.message : 'Riprocessamento fallito'}`);
+      
+      // Auto-close error message after 5 seconds
+      setTimeout(() => {
+        setReprocessingMessage('');
+      }, 5000);
+    } finally {
+      setIsReprocessing(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 transition-opacity" aria-labelledby="modal-title" role="dialog" aria-modal="true">
       <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col mx-4">
@@ -216,9 +269,25 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
               </div>
             </div>
             <div className="flex items-center gap-4">
-            <div className="text-sm text-gray-500">
-              <span className="font-medium">Creato:</span>
-              <span className="ml-2">{createdAt?.toLocaleString('it-IT')}</span>
+              {/* Admin-only reprocess button */}
+              {userProfile?.role === 'admin' && (trip.edasImageUrl || trip.loadingNoteImageUrl) && (
+                <button
+                  onClick={handleReprocessDocuments}
+                  disabled={isReprocessing}
+                  className="inline-flex items-center px-3 py-2 border border-indigo-300 rounded-md text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Riesegui scansione documenti"
+                >
+                  {isReprocessing ? (
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Scan className="w-4 h-4 mr-2" />
+                  )}
+                  {isReprocessing ? 'Scansione...' : 'Riesegui Scansione'}
+                </button>
+              )}
+              <div className="text-sm text-gray-500">
+                <span className="font-medium">Creato:</span>
+                <span className="ml-2">{createdAt?.toLocaleString('it-IT')}</span>
               </div>
               {hasUnsavedChanges && (
                 <div className="text-sm text-orange-600 font-medium">
@@ -228,6 +297,27 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
             </div>
           </div>
         </div>
+
+        {/* Reprocessing message */}
+        {reprocessingMessage && (
+          <div className={`px-6 py-3 border-b ${
+            reprocessingMessage.startsWith('✅') 
+              ? 'bg-green-50 border-green-200' 
+              : reprocessingMessage.startsWith('❌') 
+                ? 'bg-red-50 border-red-200'
+                : 'bg-blue-50 border-blue-200'
+          }`}>
+            <div className={`text-sm font-medium ${
+              reprocessingMessage.startsWith('✅') 
+                ? 'text-green-800' 
+                : reprocessingMessage.startsWith('❌') 
+                  ? 'text-red-800'
+                  : 'text-blue-800'
+            }`}>
+              {reprocessingMessage}
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="border-b border-gray-200 bg-white">
@@ -293,15 +383,15 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
                     <DetailItem 
                       label="Società" 
-                      value={getCurrentValue('loadingNoteData.companyName', trip.loadingNoteData?.companyName)} 
+                      value={getDisplayCompanyName(getCurrentValue('loadingNoteData.companyName', trip.loadingNoteData?.companyName))} 
                       isEditable 
                       onEdit={(value) => handleFieldEdit('loadingNoteData.companyName', value)} 
                     />
                     <DetailItem 
                       label="Deposito" 
-                      value={getCurrentValue('edasData.depositorInfo.name', trip.edasData?.depositorInfo?.name)} 
+                      value={getCurrentValue('loadingNoteData.depotLocation', trip.loadingNoteData?.depotLocation)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('edasData.depositorInfo.name', value)} 
+                      onEdit={(value) => handleFieldEdit('loadingNoteData.depotLocation', value)} 
                     />
                     <DetailItem 
                       label="Data" 
@@ -360,9 +450,8 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                     />
                     <DetailItem 
                       label="Vettore" 
-                      value={getCurrentValue('loadingNoteData.carrierName', trip.loadingNoteData?.carrierName)} 
-                      isEditable 
-                      onEdit={(value) => handleFieldEdit('loadingNoteData.carrierName', value)} 
+                      value={driverCarriers.join(', ') || 'N/A'} 
+                      isEditable={false}
                     />
                     <DetailItem 
                       label="Autista" 

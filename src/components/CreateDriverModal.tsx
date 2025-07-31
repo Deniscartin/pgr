@@ -48,7 +48,8 @@ export default function CreateDriverModal({ onClose, operatorCarrier }: CreateDr
     setLoading(true);
     
     try {
-      await createUserAsAdmin(formData.email, formData.password, formData.name, 'autista', formData.carrier);
+      const carriers = formData.carrier.trim() ? [formData.carrier.trim()] : undefined;
+      await createUserAsAdmin(formData.email, formData.password, formData.name, 'autista', carriers);
       onClose();
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'code' in error) {

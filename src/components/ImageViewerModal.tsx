@@ -24,39 +24,105 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
       
       // Funzione per caricare un'immagine e convertirla in base64 con dimensioni
       const loadImage = (url: string): Promise<{dataUrl: string, width: number, height: number}> => {
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            try {
-              const canvas = document.createElement('canvas');
-              const ctx = canvas.getContext('2d');
-              if (!ctx) {
-                reject(new Error('Cannot get canvas context'));
-                return;
-              }
-              
-              canvas.width = img.naturalWidth || img.width;
-              canvas.height = img.naturalHeight || img.height;
-              
-              if (canvas.width === 0 || canvas.height === 0) {
-                reject(new Error('Invalid image dimensions'));
-                return;
-              }
-              
-              ctx.drawImage(img, 0, 0);
-              const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-              resolve({
-                dataUrl,
-                width: canvas.width,
-                height: canvas.height
-              });
-            } catch (error) {
-              reject(error);
+        return new Promise(async (resolve, reject) => {
+          try {
+            // Metodo 1: Usa API server-side per bypassare CORS
+            console.log('Downloading image via server-side API:', url);
+            const apiResponse = await fetch('/api/download-image', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ imageUrl: url }),
+            });
+
+            if (!apiResponse.ok) {
+              throw new Error(`API error: ${apiResponse.status}`);
             }
-          };
-          img.onerror = () => reject(new Error('Failed to load image'));
-          img.src = url;
+
+            const result = await apiResponse.json();
+            
+            if (!result.success) {
+              throw new Error(result.error || 'Failed to download image');
+            }
+
+            // Ottieni dimensioni dell'immagine
+            const img = new Image();
+            img.onload = () => {
+              resolve({
+                dataUrl: result.dataUrl,
+                width: img.naturalWidth || img.width,
+                height: img.naturalHeight || img.height
+              });
+            };
+            img.onerror = () => {
+              // Anche se non riusciamo a ottenere le dimensioni, usiamo valori di default
+              console.warn('Could not get image dimensions, using defaults');
+              resolve({
+                dataUrl: result.dataUrl,
+                width: 800,
+                height: 600
+              });
+            };
+            img.src = result.dataUrl;
+
+          } catch (apiError) {
+            console.warn('Server-side API method failed, trying client-side fallback:', apiError);
+            
+            // Fallback: Prova metodo client-side
+            try {
+              const response = await fetch(url, {
+                mode: 'cors',
+                credentials: 'omit'
+              });
+              
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+              
+              const blob = await response.blob();
+              const reader = new FileReader();
+              
+              reader.onload = () => {
+                const img = new Image();
+                img.onload = () => {
+                  resolve({
+                    dataUrl: reader.result as string,
+                    width: img.naturalWidth || img.width,
+                    height: img.naturalHeight || img.height
+                  });
+                };
+                img.onerror = () => {
+                  resolve({
+                    dataUrl: reader.result as string,
+                    width: 800,
+                    height: 600
+                  });
+                };
+                img.src = reader.result as string;
+              };
+              
+              reader.onerror = () => {
+                console.error('All methods failed, using original URL');
+                resolve({
+                  dataUrl: url,
+                  width: 800,
+                  height: 600
+                });
+              };
+              
+              reader.readAsDataURL(blob);
+              
+            } catch (fetchError) {
+              console.error('All download methods failed:', fetchError);
+              // Ultimo fallback: usa l'URL originale
+              resolve({
+                dataUrl: url,
+                width: 800,
+                height: 600
+              });
+            }
+          }
         });
       };
 
@@ -84,17 +150,36 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
           yPosition += 10;
 
           const imageData = await loadImage(trip.edasImageUrl);
-          const aspectRatio = imageData.height / imageData.width;
-          const imageHeight = Math.min(imageWidth * aspectRatio, pageHeight - yPosition - margin);
           
-          // Controlla se l'immagine entra nella pagina
-          if (yPosition + imageHeight > pageHeight - margin) {
-            pdf.addPage();
-            yPosition = margin;
+          // Calcola dimensioni mantenendo aspect ratio
+          const originalWidth = imageData.width;
+          const originalHeight = imageData.height;
+          const aspectRatio = originalHeight / originalWidth;
+          
+          // Calcola dimensioni ottimali per la pagina
+          let finalWidth = imageWidth;
+          let finalHeight = imageWidth * aspectRatio;
+          
+          // Se l'altezza supera lo spazio disponibile, scala in base all'altezza
+          const availableHeight = pageHeight - yPosition - margin - 10;
+          if (finalHeight > availableHeight) {
+            finalHeight = availableHeight;
+            finalWidth = finalHeight / aspectRatio;
           }
           
-          pdf.addImage(imageData.dataUrl, 'JPEG', margin, yPosition, imageWidth, imageHeight);
-          yPosition += imageHeight + 10;
+          // Centra l'immagine orizzontalmente se è più piccola della larghezza disponibile
+          const xPosition = margin + (imageWidth - finalWidth) / 2;
+          
+          // Controlla se l'immagine entra nella pagina
+          if (yPosition + finalHeight > pageHeight - margin) {
+            pdf.addPage();
+            yPosition = margin + 20; // Spazio per il titolo sulla nuova pagina
+            pdf.setFontSize(12);
+            pdf.text('e-DAS - Documento Originale', margin, margin + 10);
+          }
+          
+          pdf.addImage(imageData.dataUrl, 'JPEG', xPosition, yPosition, finalWidth, finalHeight);
+          yPosition += finalHeight + 20;
         } catch (error) {
           console.error('Errore nel caricamento immagine e-DAS originale:', error);
         }
@@ -105,19 +190,36 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
       // Nota di carico originale
       if (trip.loadingNoteImageUrl) {
         try {
+          // Aggiungi nuova pagina per la nota di carico
           pdf.addPage();
-          yPosition = margin;
+          yPosition = margin + 20;
 
           pdf.setFontSize(12);
-          pdf.text('Nota di Carico - Documento Originale', margin, yPosition);
-          yPosition += 10;
+          pdf.text('Nota di Carico - Documento Originale', margin, margin + 10);
 
           const imageData = await loadImage(trip.loadingNoteImageUrl);
-          const aspectRatio = imageData.height / imageData.width;
-          const imageHeight = Math.min(imageWidth * aspectRatio, pageHeight - yPosition - margin);
           
-          pdf.addImage(imageData.dataUrl, 'JPEG', margin, yPosition, imageWidth, imageHeight);
-          yPosition += imageHeight + 10;
+          // Calcola dimensioni mantenendo aspect ratio
+          const originalWidth = imageData.width;
+          const originalHeight = imageData.height;
+          const aspectRatio = originalHeight / originalWidth;
+          
+          // Calcola dimensioni ottimali per la pagina
+          let finalWidth = imageWidth;
+          let finalHeight = imageWidth * aspectRatio;
+          
+          // Se l'altezza supera lo spazio disponibile, scala in base all'altezza
+          const availableHeight = pageHeight - yPosition - margin - 10;
+          if (finalHeight > availableHeight) {
+            finalHeight = availableHeight;
+            finalWidth = finalHeight / aspectRatio;
+          }
+          
+          // Centra l'immagine orizzontalmente se è più piccola della larghezza disponibile
+          const xPosition = margin + (imageWidth - finalWidth) / 2;
+          
+          pdf.addImage(imageData.dataUrl, 'JPEG', xPosition, yPosition, finalWidth, finalHeight);
+          yPosition += finalHeight + 20;
         } catch (error) {
           console.error('Errore nel caricamento immagine nota di carico originale:', error);
         }
@@ -126,19 +228,36 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
       // Cartellino Conta Litro
       if (trip.cartelloCounterImageUrl) {
         try {
+          // Aggiungi nuova pagina per il cartellino conta litro
           pdf.addPage();
-          yPosition = margin;
+          yPosition = margin + 20;
 
           pdf.setFontSize(12);
-          pdf.text('Cartellino Conta Litro - Documento Originale', margin, yPosition);
-          yPosition += 10;
+          pdf.text('Cartellino Conta Litro - Documento Originale', margin, margin + 10);
 
           const imageData = await loadImage(trip.cartelloCounterImageUrl);
-          const aspectRatio = imageData.height / imageData.width;
-          const imageHeight = Math.min(imageWidth * aspectRatio, pageHeight - yPosition - margin);
           
-          pdf.addImage(imageData.dataUrl, 'JPEG', margin, yPosition, imageWidth, imageHeight);
-          yPosition += imageHeight + 10;
+          // Calcola dimensioni mantenendo aspect ratio
+          const originalWidth = imageData.width;
+          const originalHeight = imageData.height;
+          const aspectRatio = originalHeight / originalWidth;
+          
+          // Calcola dimensioni ottimali per la pagina
+          let finalWidth = imageWidth;
+          let finalHeight = imageWidth * aspectRatio;
+          
+          // Se l'altezza supera lo spazio disponibile, scala in base all'altezza
+          const availableHeight = pageHeight - yPosition - margin - 10;
+          if (finalHeight > availableHeight) {
+            finalHeight = availableHeight;
+            finalWidth = finalHeight / aspectRatio;
+          }
+          
+          // Centra l'immagine orizzontalmente se è più piccola della larghezza disponibile
+          const xPosition = margin + (imageWidth - finalWidth) / 2;
+          
+          pdf.addImage(imageData.dataUrl, 'JPEG', xPosition, yPosition, finalWidth, finalHeight);
+          yPosition += finalHeight + 20;
         } catch (error) {
           console.error('Errore nel caricamento immagine cartellino conta litro:', error);
         }
