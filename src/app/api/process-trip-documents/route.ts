@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     // e-DAS: Salva solo come immagine (nessun processamento OCR)
     console.log('e-DAS salvato come immagine (nessun processamento OCR)');
-    let edasData: ParsedEDASData | null = null;
+    const edasData: ParsedEDASData | null = null;
 
     // Processa solo la Nota di Carico con OCR
     let loadingNoteData: ParsedLoadingNoteData | null = null;
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Nessuna validazione incrociata dato che l'e-DAS non viene più processato
-    let validationResults: ValidationResult[] = [];
+    const validationResults: ValidationResult[] = [];
 
     // Aggiorna il trip con i dati processati
     const updateData: any = {
