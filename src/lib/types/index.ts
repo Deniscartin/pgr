@@ -4,7 +4,8 @@ export interface User {
   name: string;
   role: 'admin' | 'autista' | 'operatore' | 'gestore_fatture';
   qrCode?: string; // QR code associato al driver (solo per autisti)  
-  carrier?: string; // Vettore associato (per autisti e operatori)
+  carrier?: string; // Vettore associato (per compatibilità)
+  carriers?: string[]; // Vettori associati (per autisti e operatori)
   createdAt: Date;
   updatedAt: Date;
 }

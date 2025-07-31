@@ -1,17 +1,18 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Trip, Order } from '@/lib/types';
-import { Search, ChevronLeft, ChevronRight, Filter, Calendar, User, FileText, Trash2, Truck } from 'lucide-react';
+import { Trip, Order, User } from '@/lib/types';
+import { Search, ChevronLeft, ChevronRight, Filter, Calendar, User as UserIcon, FileText, Trash2, Truck } from 'lucide-react';
 
 interface TripsTableProps {
   trips: Trip[];
   orders: Order[];
+  drivers: User[];
   onViewDetails: (trip: Trip) => void;
   onDeleteTrip?: (trip: Trip) => void;
 }
 
-export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip }: TripsTableProps) {
+export default function TripsTable({ trips, orders, drivers, onViewDetails, onDeleteTrip }: TripsTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [carrierFilter, setCarrierFilter] = useState('all');
   const [driverFilter, setDriverFilter] = useState('all');
@@ -22,29 +23,51 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
 
 
   
-  // Get unique drivers for filter
+  // Get unique drivers for filter (same as modal)
   const uniqueDrivers = useMemo(() => {
-    const drivers = [...new Set(trips.map(trip => trip.driverName).filter(Boolean))];
-    return drivers.sort();
+    const driverSet = new Set<string>();
+    trips.forEach(trip => {
+      const driverName = trip.loadingNoteData?.driverName || trip.driverName;
+      if (driverName && driverName.trim()) {
+        driverSet.add(driverName.trim());
+      }
+    });
+    return Array.from(driverSet).sort();
   }, [trips]);
 
-  // Get unique carriers for filter
+  // Get unique carriers for filter (from driver data, same as modal)
   const uniqueCarriers = useMemo(() => {
-    const carriers = [...new Set(trips.map(trip => trip.loadingNoteData?.carrierName).filter(Boolean))];
-    return carriers.sort();
-  }, [trips]);
+    const carrierSet = new Set<string>();
+    trips.forEach(trip => {
+      const driver = drivers.find(d => d.id === trip.driverId);
+      const driverCarriers = driver?.carriers || (driver?.carrier ? [driver.carrier] : []);
+      driverCarriers.forEach(carrier => {
+        if (carrier && carrier.trim()) {
+          carrierSet.add(carrier.trim());
+        }
+      });
+    });
+    return Array.from(carrierSet).sort();
+  }, [trips, drivers]);
 
   const filteredAndSortedTrips = useMemo(() => {
     let filtered = trips;
 
-    // Carrier filter
+    // Carrier filter (using driver data, same as modal)
     if (carrierFilter !== 'all') {
-      filtered = filtered.filter(trip => trip.loadingNoteData?.carrierName === carrierFilter);
+      filtered = filtered.filter(trip => {
+        const driver = drivers.find(d => d.id === trip.driverId);
+        const driverCarriers = driver?.carriers || (driver?.carrier ? [driver.carrier] : []);
+        return driverCarriers.includes(carrierFilter);
+      });
     }
 
-    // Driver filter
+    // Driver filter (same as modal)
     if (driverFilter !== 'all') {
-      filtered = filtered.filter(trip => trip.driverName === driverFilter);
+      filtered = filtered.filter(trip => {
+        const driverName = trip.loadingNoteData?.driverName || trip.driverName;
+        return driverName === driverFilter;
+      });
     }
 
     // Date range filter
@@ -62,18 +85,20 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
       });
     }
 
-    // Search filter
+    // Search filter (matching modal fields)
     if (searchTerm) {
       const lowercasedSearchTerm = searchTerm.toLowerCase();
       filtered = filtered.filter(trip => {
-        const order = orders.find(o => o.id === trip.orderId);
+        const driver = drivers.find(d => d.id === trip.driverId);
+        const driverCarriers = driver?.carriers || (driver?.carrier ? [driver.carrier] : []);
+        const driverName = trip.loadingNoteData?.driverName || trip.driverName;
+        
         return (
-          trip.driverName?.toLowerCase().includes(lowercasedSearchTerm) ||
-          order?.orderNumber?.toLowerCase().includes(lowercasedSearchTerm) ||
-          order?.customerName?.toLowerCase().includes(lowercasedSearchTerm) ||
-          trip.edasData?.documentInfo?.dasNumber?.toLowerCase().includes(lowercasedSearchTerm) ||
-          trip.edasData?.productInfo?.description?.toLowerCase().includes(lowercasedSearchTerm) ||
-          trip.loadingNoteData?.carrierName?.toLowerCase().includes(lowercasedSearchTerm)
+          driverName?.toLowerCase().includes(lowercasedSearchTerm) ||
+          trip.loadingNoteData?.documentNumber?.toLowerCase().includes(lowercasedSearchTerm) ||
+          trip.loadingNoteData?.consigneeName?.toLowerCase().includes(lowercasedSearchTerm) ||
+          trip.loadingNoteData?.productDescription?.toLowerCase().includes(lowercasedSearchTerm) ||
+          driverCarriers.some(carrier => carrier?.toLowerCase().includes(lowercasedSearchTerm))
         );
       });
     }
@@ -84,7 +109,7 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
       const dateB = b.createdAt ? (b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt as any).getTime()) : 0;
       return dateB - dateA;
     });
-  }, [trips, orders, searchTerm, carrierFilter, driverFilter, dateFromFilter, dateToFilter]);
+  }, [trips, orders, drivers, searchTerm, carrierFilter, driverFilter, dateFromFilter, dateToFilter]);
 
   const totalPages = Math.ceil(filteredAndSortedTrips.length / itemsPerPage);
   const paginatedTrips = filteredAndSortedTrips.slice(
@@ -166,7 +191,7 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
             {/* Driver Filter */}
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-gray-400" />
+                <UserIcon className="h-5 w-5 text-gray-400" />
               </div>
               <select
                 value={driverFilter}
@@ -244,6 +269,8 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
             <tbody className="bg-white divide-y divide-gray-200">
               {paginatedTrips.map((trip) => {
                 const order = orders.find(o => o.id === trip.orderId);
+                const driver = drivers.find(d => d.id === trip.driverId);
+                const driverCarriers = driver?.carriers || (driver?.carrier ? [driver.carrier] : []);
                 const createdAt = trip.createdAt ? (trip.createdAt instanceof Date ? trip.createdAt : new Date(trip.createdAt as any)) : null;
 
                 
@@ -257,17 +284,19 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
                         {order?.orderNumber || 'N/A'}
                       </div> */}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{trip.driverName}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {trip.loadingNoteData?.driverName || trip.driverName || 'N/A'}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{order?.customerName || 'N/A'}</div>
+                      <div className="text-sm text-gray-900">{trip.loadingNoteData?.consigneeName || 'N/A'}</div>
                       <div className="text-sm text-gray-500">{trip.edasData?.recipientInfo?.name || ''}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
-                        {trip.edasData?.productInfo?.description || order?.product || 'N/A'}
+                        {trip.loadingNoteData?.productDescription || 'N/A'}
                       </div>
                       <div className="text-sm text-gray-500">
-                        {trip.edasData?.productInfo?.volumeAtAmbientTempL ? `${trip.edasData.productInfo.volumeAtAmbientTempL}L` : ''}
+                        {trip.loadingNoteData?.volumeLiters ? `${trip.loadingNoteData.volumeLiters}L` : ''}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -282,10 +311,10 @@ export default function TripsTable({ trips, orders, onViewDetails, onDeleteTrip 
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {createdAt ? createdAt.toLocaleDateString('it-IT') : 'N/A'}
+                      {trip.loadingNoteData?.loadingDate || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {trip.loadingNoteData?.carrierName || 'N/A'}
+                      {driverCarriers.join(', ') || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">

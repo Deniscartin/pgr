@@ -137,7 +137,7 @@ export function useDrivers(carrier?: string) {
       const q = query(
         collection(db, 'users'), 
         where('role', '==', 'autista'), 
-        where('carrier', '==', carrier)
+        where('carriers', 'array-contains', carrier)
       );
 
       const unsubscribe = onSnapshot(q, (snapshot) => {

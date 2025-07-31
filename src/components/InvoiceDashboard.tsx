@@ -41,6 +41,10 @@ export default function InvoiceDashboard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
   const priceFileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Soglie per variazioni significative
+  const SIGNIFICANT_VARIANCE_THRESHOLD = 0.01; // €0.01 per litro
+  const SIGNIFICANT_PERCENTAGE_THRESHOLD = 2; // 2%
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -481,6 +485,79 @@ export default function InvoiceDashboard() {
     return {q8Price: null, plattsPrice: null, date: null};
   };
 
+  // Funzione per calcolare le variazioni significative
+  const calculatePriceVariances = (invoice: InvoiceData) => {
+    if (invoice.invoiceType !== 'passivo' || priceData.length === 0) {
+      return { hasSignificantVariance: false, variances: [] };
+    }
+
+    const prices = findPricesForDate(invoice.date);
+    const effectivePrice = invoice.invoiceLines && invoice.invoiceLines.length > 0 
+      ? invoice.invoiceLines[0].unitValue 
+      : (invoice.unitPrice || 0);
+
+    if (effectivePrice <= 0) {
+      return { hasSignificantVariance: false, variances: [] };
+    }
+
+    const variances = [];
+
+    // Controllo variazione Q8
+    if (prices.q8Price) {
+      const q8Difference = effectivePrice - prices.q8Price;
+      const q8PercentageDiff = Math.abs((q8Difference / prices.q8Price) * 100);
+      
+      if (Math.abs(q8Difference) >= SIGNIFICANT_VARIANCE_THRESHOLD || q8PercentageDiff >= SIGNIFICANT_PERCENTAGE_THRESHOLD) {
+        variances.push({
+          type: 'Q8',
+          referencePrice: prices.q8Price,
+          invoicePrice: effectivePrice,
+          difference: q8Difference,
+          percentageDiff: q8PercentageDiff,
+          status: q8Difference > 0 ? 'above' : 'below'
+        });
+      }
+    }
+
+    // Controllo variazione Platts
+    if (prices.plattsPrice) {
+      const plattsDifference = effectivePrice - prices.plattsPrice;
+      const plattsPercentageDiff = Math.abs((plattsDifference / prices.plattsPrice) * 100);
+      
+      if (Math.abs(plattsDifference) >= SIGNIFICANT_VARIANCE_THRESHOLD || plattsPercentageDiff >= SIGNIFICANT_PERCENTAGE_THRESHOLD) {
+        variances.push({
+          type: 'Platts',
+          referencePrice: prices.plattsPrice,
+          invoicePrice: effectivePrice,
+          difference: plattsDifference,
+          percentageDiff: plattsPercentageDiff,
+          status: plattsDifference > 0 ? 'above' : 'below'
+        });
+      }
+    }
+
+    return {
+      hasSignificantVariance: variances.length > 0,
+      variances
+    };
+  };
+
+  // Ottieni tutte le fatture con variazioni significative
+  const getInvoicesWithSignificantVariances = () => {
+    return invoices
+      .map(invoice => ({
+        invoice,
+        ...calculatePriceVariances(invoice)
+      }))
+      .filter(item => item.hasSignificantVariance)
+      .sort((a, b) => {
+        // Ordina per maggiore variazione assoluta
+        const maxVarianceA = Math.max(...a.variances.map(v => Math.abs(v.difference)));
+        const maxVarianceB = Math.max(...b.variances.map(v => Math.abs(v.difference)));
+        return maxVarianceB - maxVarianceA;
+      });
+  };
+
   const handlePriceCheck = async (invoice: InvoiceData) => {
     // Ora è solo un modal informativo per mostrare i dettagli
     setSelectedInvoice(invoice);
@@ -521,8 +598,89 @@ export default function InvoiceDashboard() {
       </header>
 
       <main className="mx-auto max-w-7xl py-6 sm:px-6 lg:px-8">
+        {/* Avvisi Variazioni Prezzi */}
+        {invoiceType === 'passivo' && priceData.length > 0 && (() => {
+          const invoicesWithVariances = getInvoicesWithSignificantVariances();
+          
+          if (invoicesWithVariances.length === 0) return null;
+          
+          return (
+            <div className="mb-8">
+              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+                <div className="flex items-center mb-4">
+                  <AlertTriangle className="h-6 w-6 text-yellow-600 mr-2" />
+                  <h3 className="text-lg font-medium text-yellow-800">
+                    Avvisi Variazioni Prezzi ({invoicesWithVariances.length})
+                  </h3>
+                </div>
+                
+                <div className="space-y-3">
+                  {invoicesWithVariances.slice(0, 5).map(({ invoice, variances }) => (
+                    <div key={invoice.id} className="bg-white p-4 rounded-lg shadow-sm border">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-4">
+                            <span className="font-medium text-gray-900">
+                              Fattura {invoice.invoiceNumber}
+                            </span>
+                            <span className="text-sm text-gray-500">
+                              {invoice.date}
+                            </span>
+                            <span className="text-sm text-gray-600">
+                              {invoice.issuerName}
+                            </span>
+                          </div>
+                          
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {variances.map((variance, index) => (
+                              <div
+                                key={index}
+                                className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  variance.status === 'above'
+                                    ? variance.type === 'Q8' 
+                                      ? 'bg-green-100 text-green-800' 
+                                      : 'bg-red-100 text-red-800'
+                                    : variance.type === 'Q8'
+                                      ? 'bg-red-100 text-red-800'
+                                      : 'bg-green-100 text-green-800'
+                                }`}
+                              >
+                                {variance.type}: {variance.status === 'above' ? '+' : ''}€{variance.difference.toFixed(4)}
+                                ({variance.status === 'above' ? '+' : ''}{variance.percentageDiff.toFixed(1)}%)
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <button
+                          onClick={() => {
+                            setSelectedInvoice(invoice);
+                            setShowPriceCheckModal(true);
+                          }}
+                          className="ml-4 inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded text-white bg-yellow-600 hover:bg-yellow-700"
+                        >
+                          <TrendingUp className="w-3 h-3 mr-1" />
+                          Dettagli
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {invoicesWithVariances.length > 5 && (
+                    <div className="text-center pt-2">
+                      <p className="text-sm text-yellow-700">
+                        ... e altre {invoicesWithVariances.length - 5} fatture con variazioni
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="p-5">
               <div className="flex items-center">
@@ -582,6 +740,29 @@ export default function InvoiceDashboard() {
               </div>
             </div>
           </div>
+
+          {/* Stat Variazioni Prezzi - Solo per fatture passive con dati prezzi */}
+          {invoiceType === 'passivo' && priceData.length > 0 && (
+            <div className="bg-white overflow-hidden shadow rounded-lg">
+              <div className="p-5">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <AlertTriangle className={`h-6 w-6 ${getInvoicesWithSignificantVariances().length > 0 ? 'text-red-400' : 'text-green-400'}`} />
+                  </div>
+                  <div className="ml-5 w-0 flex-1">
+                    <dl>
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        Variazioni Prezzi
+                      </dt>
+                      <dd className={`text-lg font-medium ${getInvoicesWithSignificantVariances().length > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {getInvoicesWithSignificantVariances().length} su {invoices.length}
+                      </dd>
+                    </dl>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
                 {/* Actions */}
@@ -794,8 +975,12 @@ export default function InvoiceDashboard() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {invoices.map((invoice) => (
-                    <tr key={invoice.id} className="hover:bg-gray-50">
+                  {invoices.map((invoice) => {
+                    const priceVariance = calculatePriceVariances(invoice);
+                    const hasVariance = priceVariance.hasSignificantVariance;
+                    
+                    return (
+                    <tr key={invoice.id} className={`hover:bg-gray-50 ${hasVariance ? 'bg-yellow-50 border-l-4 border-yellow-300' : ''}`}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {invoice.invoiceNumber}
                       </td>
@@ -828,11 +1013,16 @@ export default function InvoiceDashboard() {
                                 setSelectedInvoice(invoice);
                                 setShowPriceCheckModal(true);
                               }}
-                              className="text-yellow-600 hover:text-yellow-900"
+                              className={`${hasVariance ? 'text-red-600 hover:text-red-900' : 'text-yellow-600 hover:text-yellow-900'}`}
                               title="Controllo prezzi"
                             >
                               <TrendingUp className="w-4 h-4" />
                             </button>
+                            {hasVariance && (
+                              <div title="Variazione significativa rilevata">
+                                <AlertTriangle className="w-3 h-3 text-red-500" />
+                              </div>
+                            )}
                             {priceData.length > 0 && (findPricesForDate(invoice.date).q8Price || findPricesForDate(invoice.date).plattsPrice) && (
                               <div title="Prezzi disponibili da Excel">
                                 <CheckCircle className="w-3 h-3 text-green-500" />
@@ -856,7 +1046,8 @@ export default function InvoiceDashboard() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

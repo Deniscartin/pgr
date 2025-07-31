@@ -18,6 +18,8 @@ import {
 import CreateDriverModal from './CreateDriverModal';
 import TripsTable from './TripsTable';
 import TripDetailModal from './TripDetailModal';
+import ImageViewerModal from './ImageViewerModal';
+import { getDisplayCompanyName } from '@/lib/companyUtils';
 import * as XLSX from 'xlsx';
 
 export default function OperatorDashboard() {
@@ -25,23 +27,37 @@ export default function OperatorDashboard() {
   const { trips, loading: tripsLoading, deleteTrip } = useTrips();
   const { orders, loading: ordersLoading } = useOrders();
   
-  // Debug: log del carrier dell'operatore
-  console.log('Operatore carrier:', userProfile?.carrier);
+  // Debug: log dei carriers dell'operatore
+  console.log('Operatore carriers:', userProfile?.carriers);
   console.log('Operatore completo:', userProfile);
   
-  // Filter drivers by operator's carrier
-  const { drivers, loading: driversLoading } = useDrivers(userProfile?.carrier);
+  // Get drivers for all operator's carriers
+  const operatorCarriers = userProfile?.carriers || (userProfile?.carrier ? [userProfile.carrier] : []);
+  
+  // Since we can't use multiple useDrivers hooks, we'll get all drivers and filter
+  const { drivers, loading: driversLoading } = useDrivers();
   
   const [showCreateDriver, setShowCreateDriver] = useState(false);
+  const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedTripForDetail, setSelectedTripForDetail] = useState<Trip | null>(null);
+  const [selectedTripForImages, setSelectedTripForImages] = useState<Trip | null>(null);
 
+  // Filter drivers by operator's carriers
+  const myDrivers = useMemo(() => {
+    if (operatorCarriers.length === 0) return [];
+    return drivers.filter(driver => {
+      const driverCarriers = driver.carriers || (driver.carrier ? [driver.carrier] : []);
+      return operatorCarriers.some(opCarrier => driverCarriers.includes(opCarrier));
+    });
+  }, [drivers, operatorCarriers]);
+  
   // Filter trips and orders to only show those related to operator's drivers
   const myTrips = useMemo(() => {
-    const myDriverIds = drivers.map(driver => driver.id);
+    const myDriverIds = myDrivers.map(driver => driver.id);
     return trips.filter(trip => 
       trip.driverId && myDriverIds.includes(trip.driverId)
     );
-  }, [trips, drivers]);
+  }, [trips, myDrivers]);
 
   const myOrders = useMemo(() => {
     const myTripOrderIds = myTrips.map(trip => trip.orderId);
@@ -58,8 +74,8 @@ export default function OperatorDashboard() {
   };
 
   const handleViewImages = (trip: Trip) => {
-    console.log('View images for trip:', trip.id);
-    // TODO: Implement image viewer functionality
+    setSelectedTripForImages(trip);
+    setShowImageViewer(true);
   };
 
   // Handle trip deletion (operator can delete trips by their drivers)
@@ -91,18 +107,22 @@ export default function OperatorDashboard() {
         }
       }
       
+      const driver = drivers.find(d => d.id === trip.driverId);
+      const driverCarriers = driver?.carriers || (driver?.carrier ? [driver.carrier] : []);
+      
       return {
-        'ID Viaggio': trip.id,
-        'Autista': trip.driverName || 'N/A',
-        'Vettore': userProfile?.carrier || 'N/A',
-        'Stato': trip.status,
-        'Data Creazione': dateString,
-        'Numero Ordine': order?.orderNumber || 'N/A',
-        'Cliente': order?.customerName || 'N/A',
-        'Prodotto': order?.product || 'N/A',
-        'Quantità': order ? `${order.quantity} ${order.quantityUnit}` : 'N/A',
-        'Destinazione': order?.deliveryAddress || 'N/A',
-        'DAS': trip.edasData?.documentInfo?.dasNumber || 'N/A',
+        'Società': getDisplayCompanyName(trip.loadingNoteData?.companyName),
+        'Deposito': trip.loadingNoteData?.depotLocation || 'N/A',
+        'Data': trip.loadingNoteData?.loadingDate || 'N/A',
+        'Cliente': trip.loadingNoteData?.consigneeName || 'N/A',
+        'Prodotto': trip.loadingNoteData?.productDescription || 'N/A',
+        'Quantità Consegnata (LITRI)': trip.loadingNoteData?.volumeLiters || 'N/A',
+        'Densità a 15°': trip.loadingNoteData?.densityAt15C || 'N/A',
+        'Densità Ambiente': trip.edasData?.productInfo?.densityAtAmbientTemp || 'N/A',
+        'Quantità in KG': trip.loadingNoteData?.netWeightKg || 'N/A',
+        'Vettore': driverCarriers.join(', ') || 'N/A',
+        'Autista': trip.loadingNoteData?.driverName || trip.driverName || 'N/A',
+        'Numero DAS': trip.loadingNoteData?.documentNumber || 'N/A'
       };
     });
 
@@ -127,8 +147,8 @@ export default function OperatorDashboard() {
     );
   }
 
-  // Se l'operatore non ha un vettore assegnato
-  if (!userProfile?.carrier) {
+  // Se l'operatore non ha vettori assegnati
+  if (operatorCarriers.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white shadow">
@@ -183,7 +203,7 @@ export default function OperatorDashboard() {
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-                Dashboard Operatore - {userProfile?.carrier || 'Vettore'}
+                Dashboard Operatore - {operatorCarriers.join(', ') || 'Vettore'}
               </h1>
               <p className="text-gray-600">Ciao {userProfile?.name}</p>
             </div>
@@ -200,11 +220,11 @@ export default function OperatorDashboard() {
 
       <main className="mx-auto max-w-7xl py-6 sm:px-6 lg:px-8">
         {/* Info Card for Operator */}
-        {userProfile?.carrier && (
+        {operatorCarriers.length > 0 && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <h4 className="font-medium text-blue-900 mb-2">ℹ️ Gestione Vettore</h4>
+            <h4 className="font-medium text-blue-900 mb-2">ℹ️ Gestione Vettori</h4>
             <p className="text-sm text-blue-800">
-              Gestisci gli autisti e i viaggi del vettore <strong>{userProfile.carrier}</strong>. 
+              Gestisci gli autisti e i viaggi {operatorCarriers.length === 1 ? 'del vettore' : 'dei vettori'} <strong>{operatorCarriers.join(', ')}</strong>. 
               Puoi creare nuovi autisti, visualizzare tutti i viaggi dei tuoi autisti ed esportare i dati.
             </p>
           </div>
@@ -224,7 +244,7 @@ export default function OperatorDashboard() {
                       Miei Autisti
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      {drivers.length}
+                      {myDrivers.length}
                     </dd>
                   </dl>
                 </div>
@@ -318,10 +338,10 @@ export default function OperatorDashboard() {
         <div className="bg-white shadow rounded-lg mb-8">
           <div className="px-4 py-5 sm:p-6">
             <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-              I Miei Autisti ({drivers.length})
+              I Miei Autisti ({myDrivers.length})
             </h3>
             
-            {drivers.length > 0 ? (
+            {myDrivers.length > 0 ? (
               <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
                 <table className="min-w-full divide-y divide-gray-300">
                   <thead className="bg-gray-50">
@@ -341,9 +361,10 @@ export default function OperatorDashboard() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {drivers.map((driver) => {
+                    {myDrivers.map((driver) => {
                       const driverTrips = myTrips.filter(trip => trip.driverId === driver.id);
                       const driverCompletedTrips = driverTrips.filter(trip => trip.status === 'completato');
+                      const driverCarriers = driver.carriers || (driver.carrier ? [driver.carrier] : []);
                       
                       return (
                         <tr key={driver.id}>
@@ -355,7 +376,7 @@ export default function OperatorDashboard() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              {driver.carrier || 'N/A'}
+                              {driverCarriers.join(', ') || 'N/A'}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -390,6 +411,7 @@ export default function OperatorDashboard() {
               <TripsTable
                 trips={myTrips}
                 orders={myOrders}
+                drivers={drivers}
                 onViewDetails={handleViewTripDetails}
                 onDeleteTrip={handleDeleteTrip}
               />
@@ -410,7 +432,7 @@ export default function OperatorDashboard() {
       {showCreateDriver && (
         <CreateDriverModal
           onClose={() => setShowCreateDriver(false)}
-          operatorCarrier={userProfile?.carrier}
+          operatorCarrier={operatorCarriers[0]}
         />
       )}
 
@@ -421,6 +443,18 @@ export default function OperatorDashboard() {
           order={myOrders.find(o => o.id === selectedTripForDetail.orderId) || null}
           onClose={handleCloseDetailModal}
           onViewImages={handleViewImages}
+        />
+      )}
+
+      {/* Image Viewer Modal */}
+      {showImageViewer && selectedTripForImages && (
+        <ImageViewerModal
+          trip={selectedTripForImages}
+          isOpen={showImageViewer}
+          onClose={() => {
+            setShowImageViewer(false);
+            setSelectedTripForImages(null);
+          }}
         />
       )}
     </div>

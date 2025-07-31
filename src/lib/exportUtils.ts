@@ -1,4 +1,5 @@
 import { Trip, Order, User } from '@/lib/types';
+import { getDisplayCompanyName } from './companyUtils';
 import * as XLSX from 'xlsx';
 
 export const exportTripsToExcel = (trips: Trip[], orders: Order[], drivers: User[]) => {
@@ -24,7 +25,7 @@ export const exportTripsToExcel = (trips: Trip[], orders: Order[], drivers: User
       'Data Completamento': trip.completedAt ? trip.completedAt.toLocaleDateString('it-IT') : 'N/A',
       
       // Nuovi dati richiesti - basati sui campi della bolla di carico
-      'Società': loadingNote?.consigneeName || 'N/A',
+      'Società': getDisplayCompanyName(loadingNote?.companyName),
       'Deposito': loadingNote?.shipperName || 'N/A',
       'Data': loadingNote?.loadingDate || 'N/A',
       'Cliente': loadingNote?.carrierName || 'N/A',

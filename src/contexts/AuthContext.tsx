@@ -17,8 +17,8 @@ interface AuthContextType {
   userProfile: User | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  createUser: (email: string, password: string, name: string, role: UserRole, carrier?: string) => Promise<void>;
-  createUserAsAdmin: (email: string, password: string, name: string, role: UserRole, carrier?: string) => Promise<void>;
+  createUser: (email: string, password: string, name: string, role: UserRole, carriers?: string[]) => Promise<void>;
+  createUserAsAdmin: (email: string, password: string, name: string, role: UserRole, carriers?: string[]) => Promise<void>;
   refreshUserProfile: () => Promise<void>;
   loading: boolean;
 }
@@ -52,7 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             email: user.email!,
             name: userData.name,
             role: userData.role,
-            carrier: userData.carrier,
+            carriers: userData.carriers || (userData.carrier ? [userData.carrier] : undefined),
             qrCode: userData.qrCode,
             createdAt: userData.createdAt?.toDate() || new Date(),
             updatedAt: userData.updatedAt?.toDate() || new Date(),
@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signOut(auth);
   };
 
-  const createUser = async (email: string, password: string, name: string, role: UserRole, carrier?: string) => {
+  const createUser = async (email: string, password: string, name: string, role: UserRole, carriers?: string[]) => {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
 
@@ -89,15 +89,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updatedAt: new Date(),
     };
     
-    if (carrier) {
-      userData.carrier = carrier;
+    if (carriers && carriers.length > 0) {
+      userData.carriers = carriers;
     }
     
     await setDoc(doc(db, 'users', user.uid), userData);
   };
 
   // Funzione per creare utenti come admin senza perdere la sessione corrente
-  const createUserAsAdmin = async (email: string, password: string, name: string, role: UserRole, carrier?: string) => {
+  const createUserAsAdmin = async (email: string, password: string, name: string, role: UserRole, carriers?: string[]) => {
     // Salva l'utente attualmente autenticato
     const currentAuthUser = auth.currentUser;
     
@@ -114,8 +114,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updatedAt: new Date(),
     };
     
-    if (carrier) {
-      userData.carrier = carrier;
+    if (carriers && carriers.length > 0) {
+      userData.carriers = carriers;
     }
     
     await setDoc(doc(db, 'users', newUser.uid), userData);
@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: userData.email,
           name: userData.name,
           role: userData.role,
-          carrier: userData.carrier,
+          carriers: userData.carriers || (userData.carrier ? [userData.carrier] : undefined),
           qrCode: userData.qrCode,
           createdAt: userData.createdAt?.toDate() || new Date(),
           updatedAt: userData.updatedAt?.toDate() || new Date(),

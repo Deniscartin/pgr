@@ -22,6 +22,7 @@ import ManageOrderModal from './ManageOrderModal';
 import ImageViewerModal from './ImageViewerModal';
 import TripsTable from './TripsTable';
 import TripDetailModal from './TripDetailModal';
+import { getDisplayCompanyName } from '@/lib/companyUtils';
 import * as XLSX from 'xlsx';
 
 export default function AdminDashboard() {
@@ -226,9 +227,12 @@ export default function AdminDashboard() {
           <button
             onClick={() => {
               const dataToExport = trips.map(trip => {
+                const driver = drivers.find(d => d.id === trip.driverId);
+                const driverCarriers = driver?.carriers || (driver?.carrier ? [driver.carrier] : []);
+                
                 return {
-                  'Società': trip.loadingNoteData?.companyName || 'N/A',
-                  'Deposito': trip.edasData?.depositorInfo?.name || 'N/A',
+                  'Società': getDisplayCompanyName(trip.loadingNoteData?.companyName),
+                  'Deposito': trip.loadingNoteData?.depotLocation || 'N/A',
                   'Data': trip.loadingNoteData?.loadingDate || 'N/A',
                   'Cliente': trip.loadingNoteData?.consigneeName || 'N/A',
                   'Prodotto': trip.loadingNoteData?.productDescription || 'N/A',
@@ -236,7 +240,7 @@ export default function AdminDashboard() {
                   'Densità a 15°': trip.loadingNoteData?.densityAt15C || 'N/A',
                   'Densità Ambiente': trip.edasData?.productInfo?.densityAtAmbientTemp || 'N/A',
                   'Quantità in KG': trip.loadingNoteData?.netWeightKg || 'N/A',
-                  'Vettore': trip.loadingNoteData?.carrierName || 'N/A',
+                  'Vettore': driverCarriers.join(', ') || 'N/A',
                   'Autista': trip.loadingNoteData?.driverName || trip.driverName || 'N/A',
                   'Numero DAS': trip.loadingNoteData?.documentNumber || 'N/A'
                 };
@@ -258,6 +262,7 @@ export default function AdminDashboard() {
         <TripsTable 
           trips={trips} 
           orders={orders} 
+          drivers={drivers}
           onViewDetails={handleViewTripDetails}
           onDeleteTrip={handleDeleteTrip}
         />
