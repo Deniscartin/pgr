@@ -389,9 +389,9 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                     />
                     <DetailItem 
                       label="Deposito" 
-                      value={getCurrentValue('loadingNoteData.depotLocation', trip.loadingNoteData?.depotLocation)} 
+                      value={getCurrentValue('loadingNoteData.shipperName', trip.loadingNoteData?.shipperName)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('loadingNoteData.depotLocation', value)} 
+                      onEdit={(value) => handleFieldEdit('loadingNoteData.shipperName', value)} 
                     />
                     <DetailItem 
                       label="Data" 
@@ -436,9 +436,10 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                     />
                     <DetailItem 
                       label="Densità Ambiente" 
-                      value={getCurrentValue('edasData.productInfo.densityAtAmbientTemp', trip.edasData?.productInfo?.densityAtAmbientTemp)} 
+                      value={getCurrentValue('loadingNoteData.densityAtAmbientTemp', trip.loadingNoteData?.densityAtAmbientTemp) || 
+                             getCurrentValue('edasData.productInfo.densityAtAmbientTemp', trip.edasData?.productInfo?.densityAtAmbientTemp)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('edasData.productInfo.densityAtAmbientTemp', value)} 
+                      onEdit={(value) => handleFieldEdit('loadingNoteData.densityAtAmbientTemp', value)} 
                       type="number"
                     />
                     <DetailItem 

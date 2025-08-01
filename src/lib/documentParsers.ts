@@ -161,6 +161,7 @@ export async function parseLoadingNote(base64Image: string, mimeType: string): P
       
       // Campi aggiuntivi dalle entità estratte
       densityAt15C: parseNumber(findFieldValue(['densita-15'], fieldMap, entityMap)) || 0,
+      densityAtAmbientTemp: parseNumber(findFieldValue(['densita-ambiente'], fieldMap, entityMap)) || 0,
       committenteName: findFieldValue(['committente'], fieldMap, entityMap) || '',
       companyName: findFieldValue(['societa'], fieldMap, entityMap) || '',
       depotLocation: findFieldValue(['deposito'], fieldMap, entityMap) || '',
@@ -187,6 +188,7 @@ export async function parseLoadingNote(base64Image: string, mimeType: string): P
     console.log('Volume (liters):', parsedData.volumeLiters);
     console.log('Driver Name:', parsedData.driverName);
     console.log('Density at 15°C:', parsedData.densityAt15C);
+    console.log('Density at Ambient Temp:', parsedData.densityAtAmbientTemp);
     console.log('Committente:', parsedData.committenteName);
     console.log('Company Name:', parsedData.companyName);
     console.log('Depot Location:', parsedData.depotLocation);
