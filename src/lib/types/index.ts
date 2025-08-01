@@ -122,6 +122,7 @@ export interface ParsedLoadingNoteData {
   notes: string;
   // Campi aggiuntivi dalle entità estratte
   densityAt15C?: number; // densita-15
+  densityAtAmbientTemp?: number; // densita-ambiente
   committenteName?: string; // committente
   companyName?: string; // societa
   depotLocation?: string; // Deposito

@@ -232,7 +232,7 @@ export default function AdminDashboard() {
                 
                 return {
                   'Società': getDisplayCompanyName(trip.loadingNoteData?.companyName),
-                  'Deposito': trip.loadingNoteData?.depotLocation || 'N/A',
+                  'Deposito': trip.loadingNoteData?.shipperName || 'N/A',
                   'Data': trip.loadingNoteData?.loadingDate || 'N/A',
                   'Cliente': trip.loadingNoteData?.consigneeName || 'N/A',
                   'Prodotto': trip.loadingNoteData?.productDescription || 'N/A',

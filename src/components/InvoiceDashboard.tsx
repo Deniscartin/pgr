@@ -15,7 +15,9 @@ import {
   Edit3,
   CheckCircle,
   AlertTriangle,
-  TrendingUp
+  TrendingUp,
+  Filter,
+  X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -30,7 +32,7 @@ export default function InvoiceDashboard() {
   const [showInvoiceDetails, setShowInvoiceDetails] = useState(false);
   const [showPriceCheckModal, setShowPriceCheckModal] = useState(false);
 
-  const [priceData, setPriceData] = useState<{date: string, q8Price: number, plattsPrice: number}[]>([]);
+  const [priceData, setPriceData] = useState<{date: string, [key: string]: string | number}[]>([]);
   const [priceFileName, setPriceFileName] = useState<string>('');
   const [uploadProgress, setUploadProgress] = useState<{
     current: number;
@@ -38,13 +40,66 @@ export default function InvoiceDashboard() {
     currentFileName: string;
     errors: string[];
   }>({ current: 0, total: 0, currentFileName: '', errors: [] });
+  
+  // Filtri
+  const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
+  const [unitPriceFilter, setUnitPriceFilter] = useState<{min: string, max: string}>({min: '', max: ''});
+  const [showFilters, setShowFilters] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
   const priceFileInputRef = useRef<HTMLInputElement>(null);
   
-  // Soglie per variazioni significative
-  const SIGNIFICANT_VARIANCE_THRESHOLD = 0.01; // €0.01 per litro
-  const SIGNIFICANT_PERCENTAGE_THRESHOLD = 2; // 2%
+
+
+  // Funzioni helper per i filtri
+  const getUniqueSuppliers = () => {
+    const suppliers = invoices
+      .filter(invoice => {
+        // Escludere fatture con "/A" o "PA" dalle fatture al passivo quando si creano i filtri
+        if (invoiceType === 'passivo' && (invoice.invoiceNumber.includes('/A') || invoice.invoiceNumber.includes('PA'))) {
+          return false;
+        }
+        return true;
+      })
+      .map(invoice => 
+        invoiceType === 'passivo' ? invoice.issuerName : invoice.clientName
+      )
+      .filter(Boolean);
+    return [...new Set(suppliers)].sort();
+  };
+
+  const getInvoiceUnitPrice = (invoice: InvoiceData): number => {
+    if (invoice.invoiceLines && invoice.invoiceLines.length > 0) {
+      return invoice.invoiceLines[0].unitValue;
+    }
+    return invoice.unitPrice || 0;
+  };
+
+  const filteredInvoices = invoices.filter(invoice => {
+    // Escludere fatture con "/A" o "PA" dalle fatture al passivo (sono fatture attive di Romabitumi)
+    if (invoiceType === 'passivo' && (invoice.invoiceNumber.includes('/A') || invoice.invoiceNumber.includes('PA'))) {
+      return false;
+    }
+
+    // Filtro fornitore
+    if (selectedSuppliers.length > 0) {
+      const supplierName = invoiceType === 'passivo' ? invoice.issuerName : invoice.clientName;
+      if (!supplierName || !selectedSuppliers.includes(supplierName)) {
+        return false;
+      }
+    }
+
+    // Filtro range prezzo unitario
+    const unitPrice = getInvoiceUnitPrice(invoice);
+    if (unitPriceFilter.min && unitPrice < parseFloat(unitPriceFilter.min)) {
+      return false;
+    }
+    if (unitPriceFilter.max && unitPrice > parseFloat(unitPriceFilter.max)) {
+      return false;
+    }
+
+    return true;
+  });
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -223,126 +278,223 @@ export default function InvoiceDashboard() {
   const handleExportToExcel = () => {
     const dataToExport: any[] = [];
     
-    invoices.forEach(invoice => {
-      // Funzione per calcolare differenze con Platts e Q8 (solo per fatture passive)
-      const getPriceComparisons = (unitPrice: number) => {
-        const result = {
-          plattsPrice: 'N/A',
-          plattsDifference: 'N/A', 
-          plattsStatus: 'N/A',
-          q8Price: 'N/A',
-          q8Difference: 'N/A',
-          q8Status: 'N/A'
-        };
-
-        if (invoice.invoiceType === 'passivo' && priceData.length > 0 && unitPrice > 0) {
-          const prices = findPricesForDate(invoice.date);
-          
-          // Confronto con Platts
-          if (prices.plattsPrice) {
-            const plattsDiff = unitPrice - prices.plattsPrice;
-            result.plattsPrice = `€ ${prices.plattsPrice.toFixed(6)}`;
-            result.plattsDifference = `€ ${plattsDiff.toFixed(6)}`;
-            result.plattsStatus = plattsDiff > 0 ? 'Sopra Platts' : plattsDiff < 0 ? 'Sotto Platts' : 'Uguale Platts';
-          }
-
-          // Confronto con Q8
-          if (prices.q8Price) {
-            const q8Diff = unitPrice - prices.q8Price;
-            result.q8Price = `€ ${prices.q8Price.toFixed(6)}`;
-            result.q8Difference = `€ ${q8Diff.toFixed(6)}`;
-            result.q8Status = q8Diff > 0 ? 'Sopra Q8' : q8Diff < 0 ? 'Sotto Q8' : 'Uguale Q8';
-          }
-        }
-
-        return result;
-      };
-
+    // Filtra solo fatture con quantità in litri (per il calcolo dei margini)
+    const invoicesWithLiters = filteredInvoices.filter(invoice => {
       if (invoice.invoiceLines && invoice.invoiceLines.length > 0) {
-        // Per fatture con linee multiple, esporta ogni linea separatamente
-        invoice.invoiceLines.forEach(line => {
-          const priceComparisons = getPriceComparisons(line.unitValue);
-          
-          const exportRow: any = {
-            'Numero Fattura': invoice.invoiceNumber,
-            'Tipo Fattura': invoice.invoiceType,
-            'Data': invoice.date,
-            'Cedente/Prestatore': invoice.issuerName,
-            'P.IVA Cedente': invoice.issuerTaxCode,
-            'Cessionario/Committente': invoice.clientName,
-            'P.IVA Cessionario': invoice.clientTaxCode,
-            'Linea': line.lineNumber,
-            'Codice Prodotto': line.productCode || 'N/A',
-            'Descrizione Prodotto': line.description,
-            'Quantità': line.quantity.toLocaleString(),
-            'Unità Misura': line.unitOfMeasure,
-            'Prezzo Fatturato': `€ ${line.unitValue.toFixed(6)}`,
-            'Valore Totale': `€ ${line.totalValue.toFixed(2)}`,
-            'IVA %': `${line.vatRate}%`,
-            'Importo Totale Fattura': `€ ${invoice.totalAmount.toFixed(2)}`,
-            'Data Caricamento': invoice.createdAt.toLocaleDateString('it-IT'),
-            'Nome File': invoice.filePath || 'N/A'
-          };
-
-          // Aggiungi colonne confronti prezzi solo per fatture passive
-          if (invoice.invoiceType === 'passivo') {
-            exportRow['Prezzo ACQ'] = priceComparisons.q8Price;
-            exportRow['Differenza vs Q8'] = priceComparisons.q8Difference;
-            exportRow['Status vs Q8'] = priceComparisons.q8Status;
-            exportRow['Prezzo Platts'] = priceComparisons.plattsPrice;
-            exportRow['Differenza vs Platts'] = priceComparisons.plattsDifference;
-            exportRow['Status vs Platts'] = priceComparisons.plattsStatus;
-          }
-
-          dataToExport.push(exportRow);
-        });
+        return invoice.invoiceLines.some(line => 
+          line.unitOfMeasure && 
+          (line.unitOfMeasure.toLowerCase().includes('lt') || 
+           line.unitOfMeasure.toLowerCase().includes('litri') ||
+           line.unitOfMeasure.toLowerCase().includes('l'))
+        );
       } else {
-        // Per fatture semplici
-        const unitPrice = invoice.unitPrice || 0;
-        const priceComparisons = getPriceComparisons(unitPrice);
-        
-        const exportRow: any = {
-          'Numero Fattura': invoice.invoiceNumber,
-          'Tipo Fattura': invoice.invoiceType,
-          'Data': invoice.date,
-          'Cedente/Prestatore': invoice.issuerName,
-          'P.IVA Cedente': invoice.issuerTaxCode,
-          'Cessionario/Committente': invoice.clientName,
-          'P.IVA Cessionario': invoice.clientTaxCode,
-          'Linea': 1,
-          'Codice Prodotto': 'N/A',
-          'Descrizione Prodotto': invoice.productType || invoice.description,
-          'Quantità': invoice.quantity || 'N/A',
-          'Unità Misura': invoice.unitOfMeasure || 'N/A',
-          'Prezzo Fatturato': unitPrice > 0 ? `€ ${unitPrice.toFixed(6)}` : 'N/A',
-          'Valore Totale': `€ ${invoice.totalAmount.toFixed(2)}`,
-          'IVA %': `${(invoice.taxAmount / invoice.netAmount * 100).toFixed(0)}%`,
-          'Importo Totale Fattura': `€ ${invoice.totalAmount.toFixed(2)}`,
-          'Data Caricamento': invoice.createdAt.toLocaleDateString('it-IT'),
-          'Nome File': invoice.filePath || 'N/A'
-        };
-
-        // Aggiungi colonne confronti prezzi solo per fatture passive
-        if (invoice.invoiceType === 'passivo') {
-          exportRow['Prezzo ACQ'] = priceComparisons.q8Price;
-          exportRow['Differenza vs Q8'] = priceComparisons.q8Difference;
-          exportRow['Status vs Q8'] = priceComparisons.q8Status;
-          exportRow['Prezzo Platts'] = priceComparisons.plattsPrice;
-          exportRow['Differenza vs Platts'] = priceComparisons.plattsDifference;
-          exportRow['Status vs Platts'] = priceComparisons.plattsStatus;
-        }
-
-        dataToExport.push(exportRow);
+        return invoice.unitOfMeasure && 
+               (invoice.unitOfMeasure.toLowerCase().includes('lt') || 
+                invoice.unitOfMeasure.toLowerCase().includes('litri') ||
+                invoice.unitOfMeasure.toLowerCase().includes('l')) &&
+               invoice.quantity && invoice.quantity > 0;
       }
     });
 
+    // Raggruppa le fatture per calcolare i margini
+    const invoiceGroups = new Map();
+    
+    invoicesWithLiters.forEach(invoice => {
+      const key = `${invoice.date}_${invoice.dasNumber || 'NO_DAS'}`;
+      if (!invoiceGroups.has(key)) {
+        invoiceGroups.set(key, { passive: null, active: null });
+      }
+      
+      const group = invoiceGroups.get(key);
+      if (invoice.invoiceType === 'passivo') {
+        group.passive = invoice;
+      } else {
+        group.active = invoice;
+      }
+    });
+
+    // Genera i dati per l'export
+    invoiceGroups.forEach((group, key) => {
+      const passiveInvoice = group.passive;
+      const activeInvoice = group.active;
+      
+      // Se abbiamo almeno una fattura passiva (acquisto)
+      if (passiveInvoice) {
+        const processInvoice = (invoice: InvoiceData, isActive: boolean = false) => {
+          const lines = invoice.invoiceLines && invoice.invoiceLines.length > 0 
+            ? invoice.invoiceLines 
+            : [{
+                lineNumber: 1,
+                description: invoice.productType || invoice.description,
+                quantity: invoice.quantity || 0,
+                unitOfMeasure: invoice.unitOfMeasure || '',
+                unitValue: invoice.unitPrice || 0,
+                totalValue: invoice.netAmount,
+                vatRate: (invoice.taxAmount / invoice.netAmount * 100),
+                productCode: ''
+              }];
+
+                     lines.forEach(line => {
+             // Calcola prezzi e margini
+             const quantityLiters = line.quantity;
+             
+             // Calcola prezzo di acquisto - prova prima dal foglio basi di carico, poi fallback alla fattura
+             let priceAcquisto = 0;
+             const baseCarico = extractBaseCarico(passiveInvoice.description);
+             priceAcquisto = findSupplierPurchasePrice(
+               passiveInvoice.issuerName,
+               baseCarico,
+               passiveInvoice.description,
+               passiveInvoice.date
+             );
+             
+             // Se non trovato nel foglio, fallback al prezzo fattura
+             if (priceAcquisto === 0) {
+               priceAcquisto = passiveInvoice.invoiceLines && passiveInvoice.invoiceLines.length > 0 
+                 ? passiveInvoice.invoiceLines[0].unitValue 
+                 : (passiveInvoice.unitPrice || 0);
+             }
+             
+             // Il prezzo di vendita viene dalla fattura attiva se esiste, altrimenti dal valore corrente
+             let priceVendita = 0;
+             let fatturaVend = '';
+             
+             if (activeInvoice) {
+               priceVendita = activeInvoice.invoiceLines && activeInvoice.invoiceLines.length > 0 
+                 ? activeInvoice.invoiceLines[0].unitValue 
+                 : (activeInvoice.unitPrice || 0);
+               fatturaVend = activeInvoice.invoiceNumber;
+      } else {
+               // Se non c'è fattura attiva, usa il valore della fattura corrente come prezzo vendita
+               priceVendita = line.unitValue;
+             }
+
+                         // Calcoli corretti secondo le specifiche
+            const marginePerLitro = priceVendita - priceAcquisto; // prezzo vendita - prezzo acquisto
+            const margineTotal = marginePerLitro * quantityLiters; // margine/LT * LT
+            
+            // Ottieni prezzo Platts per la data
+            const prices = findPricesForDate(invoice.date);
+            const plattsPrice = (prices['PLT AUTO'] as number) || (prices['plattsPrice'] as number) || 0;
+            
+            // Imponibile vendita: litri * prezzo vendita - prezzo platts
+            const imponibileVend = (quantityLiters * priceVendita) - plattsPrice;
+            
+            // Imponibile acquisto: litri * prezzo d'acquisto  
+            const imponibileAcq = quantityLiters * priceAcquisto;
+            
+            // Ricarico: prezzo di acquisto - prezzo platts
+            const ricarico = priceAcquisto - plattsPrice;
+        
+        const exportRow: any = {
+              'DATA CONS.': invoice.date,
+              'BASE DI CARICO': passiveInvoice.description,
+              'DAS': invoice.dasNumber || passiveInvoice.dasNumber || '',
+              'PRODOTTO': line.description,
+              'FORNITORE': passiveInvoice.issuerName,
+              'CLIENTE': activeInvoice ? activeInvoice.clientName : '',
+              'LT': quantityLiters,
+              'P.VENDITA': priceVendita.toFixed(5),
+              'P.ACQUISTO': priceAcquisto.toFixed(5),
+              'MARGINE/LT': marginePerLitro.toFixed(5),
+              'MARGINE': margineTotal.toFixed(2),
+                           'FATTURA VEND': fatturaVend,
+             'FATTURA ACQ': passiveInvoice.invoiceNumber,
+             'IMPONIB.VEND.': imponibileVend.toFixed(2),
+             'IMPONIB.ACQ': imponibileAcq.toFixed(2),
+             'PLATT.S': plattsPrice.toFixed(5),
+             'ricarico da acquisto': ricarico.toFixed(3)
+            };
+
+            dataToExport.push(exportRow);
+          });
+        };
+
+        processInvoice(passiveInvoice);
+      }
+    });
+
+    // Se non ci sono dati con i raggruppamenti, esporta le fatture individuali
+    if (dataToExport.length === 0) {
+      invoicesWithLiters.forEach(invoice => {
+        const lines = invoice.invoiceLines && invoice.invoiceLines.length > 0 
+          ? invoice.invoiceLines 
+          : [{
+              lineNumber: 1,
+              description: invoice.productType || invoice.description,
+              quantity: invoice.quantity || 0,
+              unitOfMeasure: invoice.unitOfMeasure || '',
+              unitValue: invoice.unitPrice || 0,
+              totalValue: invoice.netAmount,
+              vatRate: (invoice.taxAmount / invoice.netAmount * 100),
+              productCode: ''
+            }];
+
+                 lines.forEach(line => {
+           const prices = findPricesForDate(invoice.date);
+           const plattsPrice = (prices['PLT AUTO'] as number) || (prices['plattsPrice'] as number) || 0;
+           
+           // Il prezzo di vendita è sempre il valore unitario della fattura
+           let priceVendita = line.unitValue; // Sempre il valore unitario della riga
+           let priceAcquisto = 0;
+           
+        if (invoice.invoiceType === 'passivo') {
+             const baseCarico = extractBaseCarico(invoice.description);
+             priceAcquisto = findSupplierPurchasePrice(
+               invoice.issuerName,
+               baseCarico,
+               invoice.description,
+               invoice.date
+             );
+             if (priceAcquisto === 0) {
+               priceAcquisto = line.unitValue;
+             }
+           }
+           
+           // Calcoli per fatture individuali
+           const quantityLiters = line.quantity;
+           const marginePerLitro = priceVendita - priceAcquisto; // prezzo vendita - prezzo acquisto
+           const margineTotal = marginePerLitro * quantityLiters;
+           
+           // Imponibile vendita: litri * prezzo vendita - prezzo platts
+           const imponibileVendCalc = (quantityLiters * priceVendita) - plattsPrice;
+           
+           // Imponibile acquisto: litri * prezzo d'acquisto
+           const imponibileAcqCalc = quantityLiters * priceAcquisto;
+           
+           // Ricarico: prezzo di acquisto - prezzo platts
+           const ricaricoCalc = priceAcquisto - plattsPrice;
+           
+           const exportRow: any = {
+             'DATA CONS.': invoice.date,
+             'BASE DI CARICO': invoice.description,
+             'DAS': invoice.dasNumber || '',
+             'PRODOTTO': line.description,
+             'FORNITORE': invoice.invoiceType === 'passivo' ? invoice.issuerName : '',
+             'CLIENTE': invoice.invoiceType === 'attivo' ? invoice.clientName : '',
+             'LT': line.quantity,
+             'P.VENDITA': priceVendita.toFixed(5),
+             'P.ACQUISTO': priceAcquisto.toFixed(5),
+             'MARGINE/LT': marginePerLitro.toFixed(5),
+             'MARGINE': margineTotal.toFixed(2),
+             'FATTURA VEND': invoice.invoiceType === 'attivo' ? invoice.invoiceNumber : '',
+             'FATTURA ACQ': invoice.invoiceType === 'passivo' ? invoice.invoiceNumber : '',
+             'IMPONIB.VEND.': imponibileVendCalc.toFixed(2),
+             'IMPONIB.ACQ': imponibileAcqCalc.toFixed(2),
+             'PLATT.S': plattsPrice.toFixed(5),
+             'ricarico da acquisto': ricaricoCalc.toFixed(3)
+           };
+
+        dataToExport.push(exportRow);
+    });
+      });
+    }
+
     const ws = XLSX.utils.json_to_sheet(dataToExport);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Fatture");
+    XLSX.utils.book_append_sheet(wb, ws, "BASE DI CARICO");
     
-    const fileName = invoiceType === 'passivo' 
-      ? `fatture_passive_${new Date().toISOString().split('T')[0]}.xlsx`
-      : `fatture_attive_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const fileName = `data_cons_base_carico_${new Date().toISOString().split('T')[0]}.xlsx`;
     
     XLSX.writeFile(wb, fileName);
   };
@@ -370,16 +522,21 @@ export default function InvoiceDashboard() {
       // Converti il foglio in array di array
       const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
       
-      const extractedPrices: {date: string, q8Price: number, plattsPrice: number}[] = [];
+      if (data.length < 2) {
+        alert('Il foglio Excel deve avere almeno 2 righe (header + dati)');
+        return;
+      }
       
-      // Scorri le righe e estrai colonna B (date), C (platts) e T (q8)
+      // Estrai i nomi delle colonne dalla prima riga (header)
+      const headers = data[0] as string[];
+      const extractedPrices: {date: string, [key: string]: string | number}[] = [];
+      
+      // Scorri le righe e estrai tutte le colonne
       for (let i = 1; i < data.length; i++) { // Salta la prima riga (header)
         const row = data[i];
-        const dateValue = row[1]; // Colonna B (indice 1)
-        const plattsValue = row[2]; // Colonna C (indice 2) - Platts Auto
-        const q8Value = row[19]; // Colonna T (indice 19) - Q8
+        const dateValue = row[1]; // Colonna B (indice 1) - DATA
         
-        if (dateValue && (plattsValue || q8Value)) {
+        if (dateValue) {
           let formattedDate = '';
           
           // Gestisci diversi formati di data
@@ -410,30 +567,44 @@ export default function InvoiceDashboard() {
             }
           }
           
-          const numericQ8Price = q8Value ? (typeof q8Value === 'number' ? q8Value : parseFloat(q8Value)) : 0;
-          const numericPlattsPrice = plattsValue ? (typeof plattsValue === 'number' ? plattsValue : parseFloat(plattsValue)) : 0;
-          
-          if (formattedDate && (numericQ8Price > 0 || numericPlattsPrice > 0)) {
-            extractedPrices.push({
-              date: formattedDate,
-              q8Price: numericQ8Price,
-              plattsPrice: numericPlattsPrice
-            });
+          if (formattedDate) {
+            const priceRow: {date: string, [key: string]: string | number} = { date: formattedDate };
+            
+            // Estrai tutte le colonne di prezzo (dalla C in poi)
+            for (let j = 2; j < headers.length && j < row.length; j++) {
+              const header = headers[j];
+              const value = row[j];
+              
+              if (header && value !== undefined && value !== null && value !== '') {
+                const numericValue = typeof value === 'number' ? value : parseFloat(value);
+                if (!isNaN(numericValue) && numericValue > 0) {
+                  priceRow[header] = numericValue;
+                }
+              }
+            }
+            
+            // Aggiungi solo se ha almeno un prezzo oltre alla data
+            if (Object.keys(priceRow).length > 1) {
+              extractedPrices.push(priceRow);
+            }
           }
         }
       }
       
       if (extractedPrices.length === 0) {
-        alert('Non sono stati trovati dati validi nelle colonne B (date), C (platts) e T (q8)');
+        alert('Non sono stati trovati dati validi nel foglio. Assicurati che la colonna B contenga le date e le altre colonne i prezzi.');
         return;
       }
       
       setPriceData(extractedPrices);
       setPriceFileName(file.name);
       
-      const q8Count = extractedPrices.filter(p => p.q8Price > 0).length;
-      const plattsCount = extractedPrices.filter(p => p.plattsPrice > 0).length;
-      alert(`✅ Caricati ${extractedPrices.length} record da ${file.name}\n• Q8: ${q8Count} prezzi\n• Platts: ${plattsCount} prezzi`);
+      // Conta il numero di colonne con dati
+      const sampleRow = extractedPrices[0];
+      const columnCount = Object.keys(sampleRow).length - 1; // -1 per escludere la colonna date
+      const totalPrices = extractedPrices.reduce((sum, row) => sum + (Object.keys(row).length - 1), 0);
+      
+      alert(`✅ Caricati ${extractedPrices.length} record da ${file.name}\n• ${columnCount} colonne di prezzo\n• ${totalPrices} valori totali`);
       
       if (priceFileInputRef.current) {
         priceFileInputRef.current.value = '';
@@ -445,17 +616,13 @@ export default function InvoiceDashboard() {
     }
   };
 
-  const findPricesForDate = (invoiceDate: string): {q8Price: number | null, plattsPrice: number | null, date: string | null} => {
-    if (priceData.length === 0) return {q8Price: null, plattsPrice: null, date: null};
+  const findPricesForDate = (invoiceDate: string): {date: string | null, [key: string]: number | string | null} => {
+    if (priceData.length === 0) return {date: null};
     
     // Cerca data esatta
     const exactMatch = priceData.find(item => item.date === invoiceDate);
     if (exactMatch) {
-      return {
-        q8Price: exactMatch.q8Price > 0 ? exactMatch.q8Price : null,
-        plattsPrice: exactMatch.plattsPrice > 0 ? exactMatch.plattsPrice : null,
-        date: exactMatch.date
-      };
+      return exactMatch;
     }
     
     // Cerca data più vicina (entro 7 giorni)
@@ -464,7 +631,7 @@ export default function InvoiceDashboard() {
     let minDifference = Infinity;
     
     for (const item of priceData) {
-      const itemDate = new Date(item.date);
+      const itemDate = new Date(item.date as string);
       const difference = Math.abs(targetDate.getTime() - itemDate.getTime());
       const daysDifference = difference / (1000 * 60 * 60 * 24);
       
@@ -475,94 +642,191 @@ export default function InvoiceDashboard() {
     }
     
     if (closestItem) {
-      return {
-        q8Price: closestItem.q8Price > 0 ? closestItem.q8Price : null,
-        plattsPrice: closestItem.plattsPrice > 0 ? closestItem.plattsPrice : null,
-        date: closestItem.date
-      };
+      return closestItem;
     }
     
-    return {q8Price: null, plattsPrice: null, date: null};
+    return {date: null};
   };
 
-  // Funzione per calcolare le variazioni significative
-  const calculatePriceVariances = (invoice: InvoiceData) => {
-    if (invoice.invoiceType !== 'passivo' || priceData.length === 0) {
-      return { hasSignificantVariance: false, variances: [] };
+  // Funzione per estrarre la base di carico dalla descrizione del prodotto
+  const extractBaseCarico = (description: string): string => {
+    const descLower = description.toLowerCase();
+    
+    // Cerca le basi di carico più comuni nella descrizione
+    if (descLower.includes('pomezia') || descLower.includes('pom')) {
+      return 'POMEZIA';
+    } else if (descLower.includes('gaeta')) {
+      return 'GAETA';
+    } else if (descLower.includes('ortona')) {
+      return 'ORTONA';
+    } else if (descLower.includes('taranto') || descLower.includes(' ta ') || descLower.endsWith(' ta')) {
+      return 'TARANTO';
+    } else if (descLower.includes('milazzo')) {
+      return 'MILAZZO';
+    } else if (descLower.includes('napoli') || descLower.includes(' na ') || descLower.endsWith(' na')) {
+      return 'NAPOLI';
+    } else if (descLower.includes('roma') || descLower.includes(' rm ') || descLower.endsWith(' rm')) {
+      return 'ROMA';
+    }
+    
+    return ''; // Nessuna base di carico trovata
+  };
+
+  // Funzione per trovare il prezzo di acquisto corretto per tutti i fornitori
+  const findSupplierPurchasePrice = (supplier: string, baseCarico: string, product: string, date: string): number => {
+    const prices = findPricesForDate(date);
+    if (!prices.date) return 0;
+
+    // Normalizza il nome del fornitore
+    let supplierName = '';
+    const supplierUpper = supplier.toUpperCase();
+    if (supplierUpper.startsWith('ENI')) {
+      supplierName = 'ENI';
+    } else if (supplierUpper.includes('Q8')) {
+      supplierName = 'Q8';
+    } else if (supplierUpper.includes('IP')) {
+      supplierName = 'IP';
+    } else if (supplierUpper.includes('LUDOIL')) {
+      supplierName = 'LUDOIL';
+    } else if (supplierUpper.includes('PETROLFUEL') || supplierUpper.includes('PETROL FUEL')) {
+      supplierName = 'PETROLFUEL';
     }
 
-    const prices = findPricesForDate(invoice.date);
-    const effectivePrice = invoice.invoiceLines && invoice.invoiceLines.length > 0 
-      ? invoice.invoiceLines[0].unitValue 
-      : (invoice.unitPrice || 0);
+    if (!supplierName) return 0; // Fornitore non supportato
 
-    if (effectivePrice <= 0) {
-      return { hasSignificantVariance: false, variances: [] };
+    // Normalizza il tipo prodotto
+    let productType = '';
+    const productLower = product.toLowerCase();
+    if (productLower.includes('auto') || productLower.includes('gasolio')) {
+      productType = 'AUTO';
+    } else if (productLower.includes('benzina')) {
+      productType = 'BENZ';
+    } else if (productLower.includes('agr')) {
+      productType = 'AGR';
+    } else if (productLower.includes('hvo')) {
+      productType = 'HVO';
     }
 
-    const variances = [];
+    if (!productType) return 0;
 
-    // Controllo variazione Q8
-    if (prices.q8Price) {
-      const q8Difference = effectivePrice - prices.q8Price;
-      const q8PercentageDiff = Math.abs((q8Difference / prices.q8Price) * 100);
+    // La base di carico è già normalizzata dalla funzione extractBaseCarico
+    if (!baseCarico) return 0;
+    
+    // Usa il nome completo della base di carico per cercare la colonna
+    const baseNormalized = baseCarico; // Mantieni il nome completo (ROMA, NAPOLI, POMEZIA, etc.)
+
+    // Costruisci le possibili colonne basate sul fornitore
+    const possibleColumns = [];
+
+    if (supplierName === 'ENI') {
+      possibleColumns.push(
+        `ENI ${productType} ${baseNormalized}`,
+        `ENI ${productType}. ${baseNormalized}`,
+        `ENI${productType} ${baseNormalized}`,
+        `ENI${productType}. ${baseNormalized}`,
+        `ENI ${productType}${baseNormalized}`,
+        `ENI ${productType}.${baseNormalized}`,
+        // Varianti per abbreviazioni comuni nel foglio
+        ...(baseNormalized === 'TARANTO' ? [
+          `ENI ${productType} TA`,
+          `ENI ${productType}. TA`
+        ] : []),
+        ...(baseNormalized === 'POMEZIA' ? [
+          `ENI ${productType} POM`,
+          `ENI ${productType}. POM`
+        ] : []),
+        ...(baseNormalized === 'ROMA' ? [
+          `ENI ${productType} RM`,
+          `ENI ${productType}. RM`
+        ] : []),
+        ...(baseNormalized === 'NAPOLI' ? [
+          `ENI ${productType} NA`,
+          `ENI ${productType}. NA`
+        ] : [])
+      );
+    } else if (supplierName === 'Q8') {
+      // Q8 spesso ha formato "Q8 AUTO RM", "Q8 AGR NA", etc.
+      const baseAbbrev = baseNormalized === 'ROMA' ? 'RM' : 
+                        baseNormalized === 'NAPOLI' ? 'NA' :
+                        baseNormalized === 'TARANTO' ? 'TA' :
+                        baseNormalized === 'POMEZIA' ? 'POM' :
+                        baseNormalized;
       
-      if (Math.abs(q8Difference) >= SIGNIFICANT_VARIANCE_THRESHOLD || q8PercentageDiff >= SIGNIFICANT_PERCENTAGE_THRESHOLD) {
-        variances.push({
-          type: 'Q8',
-          referencePrice: prices.q8Price,
-          invoicePrice: effectivePrice,
-          difference: q8Difference,
-          percentageDiff: q8PercentageDiff,
-          status: q8Difference > 0 ? 'above' : 'below'
-        });
+      possibleColumns.push(
+        `Q8 ${productType} ${baseAbbrev}`,
+        `Q8 ${productType} ${baseNormalized}`,
+        `Q8${productType} ${baseAbbrev}`,
+        `Q8${productType} ${baseNormalized}`
+      );
+    } else if (supplierName === 'IP') {
+      // IP spesso ha formato semplice "IP AUTO", "IP AGR"
+      possibleColumns.push(
+        `IP ${productType}`,
+        `IP${productType}`,
+        `IP ${productType} ${baseNormalized}`,
+        `IP ${productType} ${baseNormalized === 'ROMA' ? 'RM' : baseNormalized}`
+      );
+    } else if (supplierName === 'LUDOIL') {
+      possibleColumns.push(
+        `LUDOIL ${productType}`,
+        `LUDOIL${productType}`,
+        `LUDOIL ${productType} ${baseNormalized}`,
+        ...(productType === 'HVO' ? ['LUDOIL HVO'] : [])
+      );
+    } else if (supplierName === 'PETROLFUEL') {
+      possibleColumns.push(
+        `PETROLFUEL ${productType}`,
+        `PETROLFUEL${productType}`,
+        `PETROLFUEL ${productType === 'AUTO' ? 'Auto' : productType}`, // PETROLFUEL usa "Auto" invece di "AUTO"
+        `PETROLFUEL AGR` // Caso specifico
+      );
+    }
+
+    // Cerca la colonna corrispondente
+    for (const columnName of possibleColumns) {
+      const price = prices[columnName];
+      if (price && typeof price === 'number' && price > 0) {
+        return price;
       }
     }
 
-    // Controllo variazione Platts
-    if (prices.plattsPrice) {
-      const plattsDifference = effectivePrice - prices.plattsPrice;
-      const plattsPercentageDiff = Math.abs((plattsDifference / prices.plattsPrice) * 100);
-      
-      if (Math.abs(plattsDifference) >= SIGNIFICANT_VARIANCE_THRESHOLD || plattsPercentageDiff >= SIGNIFICANT_PERCENTAGE_THRESHOLD) {
-        variances.push({
-          type: 'Platts',
-          referencePrice: prices.plattsPrice,
-          invoicePrice: effectivePrice,
-          difference: plattsDifference,
-          percentageDiff: plattsPercentageDiff,
-          status: plattsDifference > 0 ? 'above' : 'below'
-        });
-      }
-    }
-
-    return {
-      hasSignificantVariance: variances.length > 0,
-      variances
-    };
+    return 0;
   };
 
-  // Ottieni tutte le fatture con variazioni significative
-  const getInvoicesWithSignificantVariances = () => {
-    return invoices
-      .map(invoice => ({
-        invoice,
-        ...calculatePriceVariances(invoice)
-      }))
-      .filter(item => item.hasSignificantVariance)
-      .sort((a, b) => {
-        // Ordina per maggiore variazione assoluta
-        const maxVarianceA = Math.max(...a.variances.map(v => Math.abs(v.difference)));
-        const maxVarianceB = Math.max(...b.variances.map(v => Math.abs(v.difference)));
-        return maxVarianceB - maxVarianceA;
-      });
-  };
+
 
   const handlePriceCheck = async (invoice: InvoiceData) => {
     // Ora è solo un modal informativo per mostrare i dettagli
     setSelectedInvoice(invoice);
     setShowPriceCheckModal(true);
   };
+
+  // Funzioni helper per i filtri
+  const handleSupplierToggle = (supplier: string) => {
+    setSelectedSuppliers(prev => 
+      prev.includes(supplier) 
+        ? prev.filter(s => s !== supplier)
+        : [...prev, supplier]
+    );
+  };
+
+  const handleSelectAllSuppliers = () => {
+    const allSuppliers = getUniqueSuppliers();
+    if (selectedSuppliers.length === allSuppliers.length) {
+      // Deseleziona tutti
+      setSelectedSuppliers([]);
+    } else {
+      // Seleziona tutti
+      setSelectedSuppliers(allSuppliers);
+    }
+  };
+
+  const clearAllFilters = () => {
+    setSelectedSuppliers([]);
+    setUnitPriceFilter({min: '', max: ''});
+  };
+
+  const hasActiveFilters = selectedSuppliers.length > 0 || unitPriceFilter.min || unitPriceFilter.max;
 
   if (invoicesLoading) {
     return (
@@ -598,86 +862,7 @@ export default function InvoiceDashboard() {
       </header>
 
       <main className="mx-auto max-w-7xl py-6 sm:px-6 lg:px-8">
-        {/* Avvisi Variazioni Prezzi */}
-        {invoiceType === 'passivo' && priceData.length > 0 && (() => {
-          const invoicesWithVariances = getInvoicesWithSignificantVariances();
-          
-          if (invoicesWithVariances.length === 0) return null;
-          
-          return (
-            <div className="mb-8">
-              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
-                <div className="flex items-center mb-4">
-                  <AlertTriangle className="h-6 w-6 text-yellow-600 mr-2" />
-                  <h3 className="text-lg font-medium text-yellow-800">
-                    Avvisi Variazioni Prezzi ({invoicesWithVariances.length})
-                  </h3>
-                </div>
-                
-                <div className="space-y-3">
-                  {invoicesWithVariances.slice(0, 5).map(({ invoice, variances }) => (
-                    <div key={invoice.id} className="bg-white p-4 rounded-lg shadow-sm border">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-4">
-                            <span className="font-medium text-gray-900">
-                              Fattura {invoice.invoiceNumber}
-                            </span>
-                            <span className="text-sm text-gray-500">
-                              {invoice.date}
-                            </span>
-                            <span className="text-sm text-gray-600">
-                              {invoice.issuerName}
-                            </span>
-                          </div>
-                          
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {variances.map((variance, index) => (
-                              <div
-                                key={index}
-                                className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                  variance.status === 'above'
-                                    ? variance.type === 'Q8' 
-                                      ? 'bg-green-100 text-green-800' 
-                                      : 'bg-red-100 text-red-800'
-                                    : variance.type === 'Q8'
-                                      ? 'bg-red-100 text-red-800'
-                                      : 'bg-green-100 text-green-800'
-                                }`}
-                              >
-                                {variance.type}: {variance.status === 'above' ? '+' : ''}€{variance.difference.toFixed(4)}
-                                ({variance.status === 'above' ? '+' : ''}{variance.percentageDiff.toFixed(1)}%)
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        
-                        <button
-                          onClick={() => {
-                            setSelectedInvoice(invoice);
-                            setShowPriceCheckModal(true);
-                          }}
-                          className="ml-4 inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded text-white bg-yellow-600 hover:bg-yellow-700"
-                        >
-                          <TrendingUp className="w-3 h-3 mr-1" />
-                          Dettagli
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  
-                  {invoicesWithVariances.length > 5 && (
-                    <div className="text-center pt-2">
-                      <p className="text-sm text-yellow-700">
-                        ... e altre {invoicesWithVariances.length - 5} fatture con variazioni
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
+
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
@@ -693,7 +878,7 @@ export default function InvoiceDashboard() {
                       Fatture Totali
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      {invoices.length}
+                      {filteredInvoices.length}
                     </dd>
                   </dl>
                 </div>
@@ -713,7 +898,7 @@ export default function InvoiceDashboard() {
                       Valore Totale
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      € {invoices.reduce((sum, inv) => sum + inv.totalAmount, 0).toFixed(2)}
+                      € {filteredInvoices.reduce((sum, inv) => sum + inv.totalAmount, 0).toFixed(2)}
                     </dd>
                   </dl>
                 </div>
@@ -733,7 +918,7 @@ export default function InvoiceDashboard() {
                       IVA Totale
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      € {invoices.reduce((sum, inv) => sum + inv.taxAmount, 0).toFixed(2)}
+                      € {filteredInvoices.reduce((sum, inv) => sum + inv.taxAmount, 0).toFixed(2)}
                     </dd>
                   </dl>
                 </div>
@@ -741,28 +926,7 @@ export default function InvoiceDashboard() {
             </div>
           </div>
 
-          {/* Stat Variazioni Prezzi - Solo per fatture passive con dati prezzi */}
-          {invoiceType === 'passivo' && priceData.length > 0 && (
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <AlertTriangle className={`h-6 w-6 ${getInvoicesWithSignificantVariances().length > 0 ? 'text-red-400' : 'text-green-400'}`} />
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
-                        Variazioni Prezzi
-                      </dt>
-                      <dd className={`text-lg font-medium ${getInvoicesWithSignificantVariances().length > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {getInvoicesWithSignificantVariances().length} su {invoices.length}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+
         </div>
 
                 {/* Actions */}
@@ -804,13 +968,7 @@ export default function InvoiceDashboard() {
                 <Upload className="w-4 h-4 mr-2" />
                 Carica Excel Prezzi
               </button>
-              <button
-                onClick={() => setShowPriceCheckModal(true)}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-yellow-600 hover:bg-yellow-700"
-              >
-                <TrendingUp className="w-4 h-4 mr-2" />
-                Controllo Prezzi
-              </button>
+
             </div>
           )}
         </div>
@@ -906,7 +1064,7 @@ export default function InvoiceDashboard() {
                   File prezzi caricato: {priceFileName}
                 </p>
                 <p className="text-xs text-green-600">
-                  {priceData.length} record • Q8: {priceData.filter(p => p.q8Price > 0).length} • Platts: {priceData.filter(p => p.plattsPrice > 0).length}
+                  {priceData.length} record • {priceData.length > 0 ? Object.keys(priceData[0]).length - 1 : 0} colonne prezzi
                 </p>
               </div>
               <button
@@ -922,6 +1080,162 @@ export default function InvoiceDashboard() {
           </div>
         )}
 
+        {/* Filtri */}
+        <div className="mb-6">
+          <div className="bg-white shadow rounded-lg">
+            <div className="px-4 py-3 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Filter className="w-5 h-5 text-gray-400" />
+                  <h3 className="text-lg font-medium text-gray-900">Filtri</h3>
+                  {hasActiveFilters && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      {(selectedSuppliers.length + (unitPriceFilter.min || unitPriceFilter.max ? 1 : 0))} attivi
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center space-x-2">
+                  {hasActiveFilters && (
+                    <button
+                      onClick={clearAllFilters}
+                      className="text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Pulisci tutti
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    {showFilters ? <X className="w-5 h-5" /> : <Filter className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            {showFilters && (
+              <div className="p-4 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Filtro Fornitore/Cliente */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        {invoiceType === 'passivo' ? 'Fornitori' : 'Clienti'}
+                      </label>
+                      <button
+                        onClick={handleSelectAllSuppliers}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                      >
+                        {selectedSuppliers.length === getUniqueSuppliers().length ? 'Deseleziona tutti' : 'Seleziona tutti'}
+                      </button>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-md">
+                      {getUniqueSuppliers().map(supplier => (
+                        <label
+                          key={supplier}
+                          className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedSuppliers.includes(supplier)}
+                            onChange={() => handleSupplierToggle(supplier)}
+                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                          />
+                          <span className="ml-2 text-sm text-gray-900 truncate" title={supplier}>
+                            {supplier}
+                          </span>
+                        </label>
+                      ))}
+                      {getUniqueSuppliers().length === 0 && (
+                        <p className="px-3 py-2 text-sm text-gray-500">
+                          Nessun {invoiceType === 'passivo' ? 'fornitore' : 'cliente'} disponibile
+                        </p>
+                      )}
+                    </div>
+                    {selectedSuppliers.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {selectedSuppliers.map(supplier => (
+                          <span
+                            key={supplier}
+                            className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+                          >
+                            {supplier}
+                            <button
+                              onClick={() => handleSupplierToggle(supplier)}
+                              className="ml-1 text-indigo-600 hover:text-indigo-800"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Filtro Range Prezzo Unitario */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Valore Unitario (€)
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          placeholder="Da (min)"
+                          value={unitPriceFilter.min}
+                          onChange={(e) => setUnitPriceFilter(prev => ({...prev, min: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          placeholder="A (max)"
+                          value={unitPriceFilter.max}
+                          onChange={(e) => setUnitPriceFilter(prev => ({...prev, max: e.target.value}))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                        />
+                      </div>
+                    </div>
+                    {(unitPriceFilter.min || unitPriceFilter.max) && (
+                      <div className="mt-2">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          Range: {unitPriceFilter.min || '0'} - {unitPriceFilter.max || '∞'} €
+                          <button
+                            onClick={() => setUnitPriceFilter({min: '', max: ''})}
+                            className="ml-1 text-green-600 hover:text-green-800"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Riepilogo Risultati */}
+                <div className="pt-2 border-t border-gray-200">
+                  <p className="text-sm text-gray-600">
+                    Mostrate <span className="font-medium">{filteredInvoices.length}</span> di <span className="font-medium">{invoices.length}</span> fatture
+                    {hasActiveFilters && (
+                      <span className="text-blue-600">
+                        {' '}(filtrate)
+                      </span>
+                    )}
+                    {invoiceType === 'passivo' && (
+                      <span className="text-gray-500">
+                        {' '}(escluse fatture /A e PA)
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Invoices Table */}
         <div className="bg-white shadow overflow-hidden sm:rounded-md">
           <div className="px-4 py-5 sm:px-6">
@@ -933,13 +1247,26 @@ export default function InvoiceDashboard() {
             </p>
           </div>
           
-          {invoices.length === 0 ? (
+          {filteredInvoices.length === 0 ? (
                           <div className="text-center py-12">
                 <FileText className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-sm font-medium text-gray-900">Nessuna fattura</h3>
+                <h3 className="mt-2 text-sm font-medium text-gray-900">
+                  {invoices.length === 0 ? 'Nessuna fattura' : 'Nessuna fattura trovata'}
+                </h3>
                 <p className="mt-1 text-sm text-gray-500">
-                  Inizia caricando la tua prima fattura elettronica (PDF o XML).
+                  {invoices.length === 0 
+                    ? 'Inizia caricando la tua prima fattura elettronica (PDF o XML).'
+                    : 'Prova a modificare i filtri per vedere più risultati.'
+                  }
                 </p>
+                {hasActiveFilters && (
+                  <button
+                    onClick={clearAllFilters}
+                    className="mt-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200"
+                  >
+                    Rimuovi tutti i filtri
+                  </button>
+                )}
               </div>
           ) : (
             <div className="overflow-x-auto">
@@ -975,12 +1302,8 @@ export default function InvoiceDashboard() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {invoices.map((invoice) => {
-                    const priceVariance = calculatePriceVariances(invoice);
-                    const hasVariance = priceVariance.hasSignificantVariance;
-                    
-                    return (
-                    <tr key={invoice.id} className={`hover:bg-gray-50 ${hasVariance ? 'bg-yellow-50 border-l-4 border-yellow-300' : ''}`}>
+                  {filteredInvoices.map((invoice) => (
+                    <tr key={invoice.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {invoice.invoiceNumber}
                       </td>
@@ -1013,17 +1336,15 @@ export default function InvoiceDashboard() {
                                 setSelectedInvoice(invoice);
                                 setShowPriceCheckModal(true);
                               }}
-                              className={`${hasVariance ? 'text-red-600 hover:text-red-900' : 'text-yellow-600 hover:text-yellow-900'}`}
+                              className="text-indigo-600 hover:text-indigo-900"
                               title="Controllo prezzi"
                             >
                               <TrendingUp className="w-4 h-4" />
                             </button>
-                            {hasVariance && (
-                              <div title="Variazione significativa rilevata">
-                                <AlertTriangle className="w-3 h-3 text-red-500" />
-                              </div>
-                            )}
-                            {priceData.length > 0 && (findPricesForDate(invoice.date).q8Price || findPricesForDate(invoice.date).plattsPrice) && (
+                            {priceData.length > 0 && (() => {
+                              const prices = findPricesForDate(invoice.date);
+                              return prices.date !== null && Object.keys(prices).length > 1;
+                            })() && (
                               <div title="Prezzi disponibili da Excel">
                                 <CheckCircle className="w-3 h-3 text-green-500" />
                               </div>
@@ -1046,8 +1367,7 @@ export default function InvoiceDashboard() {
                         </button>
                       </td>
                     </tr>
-                    );
-                  })}
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -1122,8 +1442,8 @@ export default function InvoiceDashboard() {
                         {selectedInvoice.dasNumber && (
                           <p><span className="font-medium">Numero DAS:</span> {selectedInvoice.dasNumber}</p>
                         )}
-                        {selectedInvoice.deliveryAddress && (
-                          <p><span className="font-medium">Base di Carico:</span> {selectedInvoice.deliveryAddress}</p>
+                        {selectedInvoice.description && (
+                          <p><span className="font-medium">Base di Carico:</span> {selectedInvoice.description}</p>
                         )}
                       </div>
                     </>
@@ -1237,42 +1557,35 @@ export default function InvoiceDashboard() {
                         ? selectedInvoice.invoiceLines[0].unitValue 
                         : (selectedInvoice.unitPrice || 0);
                       
-                      const results = [];
+                      const results: React.ReactElement[] = [];
                       
-                      // Confronto con Q8 (prezzo di acquisto)
-                      if (prices.q8Price && effectivePrice > 0) {
-                        const q8Difference = effectivePrice - prices.q8Price;
-                        const q8Color = q8Difference > 0 ? 'text-green-700' : q8Difference < 0 ? 'text-red-700' : 'text-gray-700';
+                      // Confronto con tutti i prezzi disponibili
+                      if (effectivePrice > 0) {
+                        Object.keys(prices).forEach((priceColumn, index) => {
+                          if (priceColumn === 'date') return;
+                          
+                          const referencePrice = prices[priceColumn] as number;
+                          if (referencePrice && referencePrice > 0) {
+                            const difference = effectivePrice - referencePrice;
+                            const differenceColor = difference > 0 ? 'text-green-700' : difference < 0 ? 'text-red-700' : 'text-gray-700';
+                            
+                            const bgColor = priceColumn.includes('Q8') ? 'bg-blue-50' : 
+                                          priceColumn.includes('PLT') ? 'bg-yellow-50' : 
+                                          priceColumn.includes('ENI') ? 'bg-green-50' : 'bg-gray-50';
                         
                         results.push(
-                          <div key="q8" className="text-sm mb-2 p-2 bg-blue-50 rounded">
+                              <div key={priceColumn} className={`text-sm mb-2 p-2 ${bgColor} rounded`}>
                             <p className="text-gray-700">
-                              <span className="font-medium">Q8 (ACQ COMUNICATO):</span> € {prices.q8Price.toFixed(6)}
-                            </p>
-                            <p className={`${q8Color} font-medium`}>
-                              <span className="font-medium">Margine vs Q8:</span> € {q8Difference.toFixed(6)} 
-                              {q8Difference > 0 }
+                                  <span className="font-medium">{priceColumn}:</span> € {referencePrice.toFixed(6)}
+                                </p>
+                                <p className={`${differenceColor} font-medium`}>
+                                  <span className="font-medium">Differenza:</span> € {difference.toFixed(6)} 
+                                  {difference > 0 ? '(sopra)' : difference < 0 ? '(sotto)' : '(uguale)'}
                             </p>
                           </div>
                         );
-                      }
-                      
-                      // Confronto con Platts
-                      if (prices.plattsPrice && effectivePrice > 0) {
-                        const plattsDifference = effectivePrice - prices.plattsPrice;
-                        const plattsColor = plattsDifference > 0 ? 'text-red-700' : plattsDifference < 0 ? 'text-green-700' : 'text-gray-700';
-                        
-                        results.push(
-                          <div key="platts" className="text-sm p-2 bg-yellow-50 rounded">
-                            <p className="text-gray-700">
-                              <span className="font-medium">Platts (Mercato):</span> € {prices.plattsPrice.toFixed(6)}
-                            </p>
-                            <p className={`${plattsColor} font-medium`}>
-                              <span className="font-medium">Differenza vs Platts:</span> € {plattsDifference.toFixed(6)} 
-                              {plattsDifference > 0 }
-                            </p>
-                          </div>
-                        );
+                          }
+                        });
                       }
                       
                       return results.length > 0 ? <div className="space-y-2">{results}</div> : null;
