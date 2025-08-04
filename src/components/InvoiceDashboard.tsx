@@ -434,9 +434,9 @@ export default function InvoiceDashboard() {
            const prices = findPricesForDate(invoice.date);
            const plattsPrice = (prices['PLT AUTO'] as number) || (prices['plattsPrice'] as number) || 0;
            
-           // Il prezzo di vendita è sempre il valore unitario della fattura
-           let priceVendita = line.unitValue; // Sempre il valore unitario della riga
-           let priceAcquisto = 0;
+                     // Il prezzo di vendita è sempre il valore unitario della fattura
+          const priceVendita = line.unitValue; // Sempre il valore unitario della riga
+          let priceAcquisto = 0;
            
         if (invoice.invoiceType === 'passivo') {
              const baseCarico = extractBaseCarico(invoice.description);

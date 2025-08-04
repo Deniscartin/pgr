@@ -26,17 +26,17 @@ export const exportTripsToExcel = (trips: Trip[], orders: Order[], drivers: User
       
       // Nuovi dati richiesti - basati sui campi della bolla di carico
       'Società': getDisplayCompanyName(loadingNote?.companyName),
-      'Deposito': loadingNote?.shipperName || 'N/A',
+      'Deposito': loadingNote?.depotLocation || loadingNote?.shipperName || 'N/A',
       'Data': loadingNote?.loadingDate || 'N/A',
       'Cliente': loadingNote?.carrierName || 'N/A',
-      'Destinazione': edas?.recipientInfo.address || 'N/A',
+      'Destinazione': loadingNote?.destinationName || edas?.recipientInfo.address || 'N/A',
       'Prodotto': loadingNote?.productDescription || 'N/A',
       'Quantità Consegnata (LITRI)': loadingNote?.volumeLiters || 'N/A',
-      'Densità a 15°': edas?.productInfo.densityAt15C || 'N/A',
-      'Densità Ambiente': edas?.productInfo.densityAtAmbientTemp || 'N/A',
+      'Densità a 15°': loadingNote?.densityAt15C || edas?.productInfo.densityAt15C || 'N/A',
+      'Densità Ambiente': loadingNote?.densityAtAmbientTemp || edas?.productInfo.densityAtAmbientTemp || 'N/A',
       'Quantità in KG': loadingNote?.netWeightKg || 'N/A',
-      'Vettore': edas?.transportInfo.firstCarrierName || 'N/A',
-      'Autista': edas?.transportInfo.driverName || trip.driverName || 'N/A',
+      'Vettore': loadingNote?.carrierName || edas?.transportInfo.firstCarrierName || 'N/A',
+      'Autista': loadingNote?.driverName || edas?.transportInfo.driverName || trip.driverName || 'N/A',
       
       // Informazioni aggiuntive
       'ID Autista': driver?.id,
@@ -78,6 +78,14 @@ export const exportTripsToExcel = (trips: Trip[], orders: Order[], drivers: User
       'Nota Carico: Peso Lordo (Kg)': loadingNote?.grossWeightKg,
       'Nota Carico: Peso Netto (Kg)': loadingNote?.netWeightKg,
       'Nota Carico: Volume (L)': loadingNote?.volumeLiters,
+      'Nota Carico: Densità 15°C': loadingNote?.densityAt15C,
+      'Nota Carico: Densità Ambiente': loadingNote?.densityAtAmbientTemp,
+      'Nota Carico: Committente': loadingNote?.committenteName,
+      'Nota Carico: Società': loadingNote?.companyName,
+      'Nota Carico: Deposito': loadingNote?.depotLocation,
+      'Nota Carico: Fornitore': loadingNote?.supplierLocation,
+      'Nota Carico: Autista': loadingNote?.driverName,
+      'Nota Carico: Destinazione': loadingNote?.destinationName,
       'Nota Carico: Note': loadingNote?.notes,
 
       'URL Firma': trip.signatureUrl,

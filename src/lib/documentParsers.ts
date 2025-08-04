@@ -1,13 +1,9 @@
-import OpenAI from 'openai';
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { ParsedLoadingNoteData, ParsedEDASData } from '@/lib/types';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import path from 'path';
 
 // Path to service account key file (best practice per sicurezza)
-const serviceAccountKeyPath = './tidal-glider-465915-e6-7d63dd15c624.json';
+const serviceAccountKeyPath = path.join(process.cwd(), 'public', 'tidal-glider-465915-e6-bd6629717062.json');
 
 // Initialize Google Cloud Document AI client with EU endpoint and key file
 const documentAIClient = new DocumentProcessorServiceClient({
@@ -24,43 +20,46 @@ const documentAIClient = new DocumentProcessorServiceClient({
 export async function parseLoadingNote(base64Image: string, mimeType: string): Promise<ParsedLoadingNoteData> {
   console.log('🔍 Inizio parsing Loading Note con Google Cloud Document AI...');
 
-  // Configuration - hardcoded values from petrolisNDC processor
+  // Configuration - primary processor (petrolisNDC)
   const projectId = 'tidal-glider-465915-e6';
   const location = 'eu';
-  const processorId = 'd9befe118d921091';
+  const primaryProcessorId = 'd9befe118d921091';
+  const backupProcessorId = '59e9b6059f7773f6'; // Processore di backup per campi critici
 
-  const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
+  const primaryProcessorName = `projects/${projectId}/locations/${location}/processors/${primaryProcessorId}`;
+  const backupProcessorName = `projects/${projectId}/locations/${location}/processors/${backupProcessorId}`;
 
   console.log('📋 Document AI Configuration:');
-  console.log('Processor Name: petrolisNDC');
+  console.log('Primary Processor Name: petrolisNDC');
+  console.log('Backup Processor ID:', backupProcessorId);
   console.log('Processor Type: Custom Extractor');
   console.log('API Endpoint: eu-documentai.googleapis.com');
   console.log('Project ID:', projectId);
   console.log('Location:', location);
-  console.log('Processor ID:', processorId);
+  console.log('Primary Processor ID:', primaryProcessorId);
   console.log('Service Account: petrolisocr@tidal-glider-465915-e6.iam.gserviceaccount.com');
   console.log('🔧 Private Key Fixed: Literal \\n converted to newlines');
-  console.log('Full Processor Path:', name);
+  console.log('Primary Processor Path:', primaryProcessorName);
 
-  try {
-    // Process the document with Document AI
+  // Helper function to process a document with a specific processor
+  const processWithProcessor = async (processorName: string, processorLabel: string) => {
     const request = {
-      name,
+      name: processorName,
       rawDocument: {
         content: base64Image,
         mimeType: mimeType,
       },
     };
 
-    console.log('📤 Inviando richiesta a Document AI...');
+    console.log(`📤 Inviando richiesta a Document AI (${processorLabel})...`);
     const [result] = await documentAIClient.processDocument(request);
     const { document } = result;
 
     if (!document) {
-      throw new Error('No document returned from Document AI');
+      throw new Error(`No document returned from Document AI (${processorLabel})`);
     }
 
-    console.log('📄 RAW RESPONSE da Document AI (Loading Note):');
+    console.log(`📄 RAW RESPONSE da Document AI (${processorLabel}):`);
     console.log('===============================================');
     console.log('Text length:', document.text?.length || 0);
     console.log('Pages:', document.pages?.length || 0);
@@ -69,44 +68,107 @@ export async function parseLoadingNote(base64Image: string, mimeType: string): P
     console.log('Tables:', document.pages?.[0]?.tables?.length || 0);
     console.log('===============================================');
 
-    // Extract key-value pairs and entities
-    const formFields = document.pages?.[0]?.formFields || [];
-    const entities = document.entities || [];
-    const documentText = document.text || '';
+    return document;
+  };
 
-    // Helper function to extract text from TextAnchor
-    const getText = (textAnchor: any) => {
-      if (!textAnchor?.textSegments || textAnchor.textSegments.length === 0) {
-        return '';
-      }
-      const segment = textAnchor.textSegments[0];
-      const startIndex = segment.startIndex || 0;
-      const endIndex = segment.endIndex || 0;
-      return documentText.substring(Number(startIndex), Number(endIndex)).trim();
+  try {
+    // Helper function to extract data from a document
+    const extractDataFromDocument = (document: any) => {
+      const formFields = document.pages?.[0]?.formFields || [];
+      const entities = document.entities || [];
+      const documentText = document.text || '';
+
+      // Helper function to extract text from TextAnchor
+      const getText = (textAnchor: any) => {
+        if (!textAnchor?.textSegments || textAnchor.textSegments.length === 0) {
+          return '';
+        }
+        const segment = textAnchor.textSegments[0];
+        const startIndex = segment.startIndex || 0;
+        const endIndex = segment.endIndex || 0;
+        return documentText.substring(Number(startIndex), Number(endIndex)).trim();
+      };
+
+      // Create a map of form fields for easier lookup
+      const fieldMap: Record<string, string> = {};
+      formFields.forEach((field: any) => {
+        const fieldName = getText(field.fieldName).toLowerCase();
+        const fieldValue = getText(field.fieldValue);
+        if (fieldName && fieldValue) {
+          fieldMap[fieldName] = fieldValue;
+        }
+      });
+
+      // Create a map of entities for easier lookup
+      const entityMap: Record<string, string[]> = {};
+      entities.forEach((entity: any) => {
+        const entityType = entity.type || '';
+        const entityValue = getText(entity.textAnchor);
+        if (entityType && entityValue) {
+          if (!entityMap[entityType]) {
+            entityMap[entityType] = [];
+          }
+          entityMap[entityType].push(entityValue);
+        }
+      });
+
+      return { fieldMap, entityMap };
     };
 
-    // Create a map of form fields for easier lookup
-    const fieldMap: Record<string, string> = {};
-    formFields.forEach((field: any) => {
-      const fieldName = getText(field.fieldName).toLowerCase();
-      const fieldValue = getText(field.fieldValue);
-      if (fieldName && fieldValue) {
-        fieldMap[fieldName] = fieldValue;
+    // Process with both processors simultaneously 
+    console.log('🔄 FASE 1: Processamento con processore primario...');
+    console.log('🔄 FASE 2: Processamento con processore specializzato per campi critici...');
+    
+    const [primaryDocument, specializedDocument] = await Promise.all([
+      processWithProcessor(primaryProcessorName, 'Primary'),
+      processWithProcessor(backupProcessorName, 'Specialized')
+    ]);
+
+    // Extract data from both processors
+    const primaryData = extractDataFromDocument(primaryDocument);
+    const specializedData = extractDataFromDocument(specializedDocument);
+
+    // Merge data: primary processor for most fields, specialized processor for critical fields
+    const criticalFields = ['deposito', 'quantita-consegnata', 'densita-ambiente', 'densita-15'];
+    
+    // Start with primary data and merge specialized critical fields
+    const fieldMap = { ...primaryData.fieldMap };
+    const entityMap = { ...primaryData.entityMap };
+
+    // Override with specialized processor data for critical fields
+    // Map from our field names to the actual field names recognized by the processor
+    const fieldMapping = {
+      'deposito': ['deposito'],
+      'quantita-consegnata': ['quantita-consegnata', 'litri'],
+      'densita-ambiente': ['densita-ambiente', 'densamb'], 
+      'densita-15': ['densita-15', 'dens15']
+    };
+
+    criticalFields.forEach(field => {
+      const possibleNames = fieldMapping[field as keyof typeof fieldMapping] || [field];
+      const specializedValue = findFieldValue(possibleNames, specializedData.fieldMap, specializedData.entityMap);
+      if (specializedValue) {
+        console.log(`✅ Campo critico '${field}' dal processore specializzato: ${specializedValue}`);
+        fieldMap[field] = specializedValue;
       }
     });
 
-    // Create a map of entities for easier lookup
-    const entityMap: Record<string, string[]> = {};
-    entities.forEach((entity: any) => {
-      const entityType = entity.type || '';
-      const entityValue = getText(entity.textAnchor);
-      if (entityType && entityValue) {
+    // Also merge specialized entities
+    Object.keys(specializedData.entityMap).forEach(entityType => {
+      if (specializedData.entityMap[entityType].length > 0) {
         if (!entityMap[entityType]) {
           entityMap[entityType] = [];
         }
-        entityMap[entityType].push(entityValue);
+        // Add specialized entities if not already present
+        specializedData.entityMap[entityType].forEach(value => {
+          if (!entityMap[entityType].includes(value)) {
+            entityMap[entityType].push(value);
+          }
+        });
       }
     });
+
+    console.log('✅ Dati da entrambi i processori integrati con successo');
 
     console.log('🔍 CAMPI ESTRATTI (Form Fields):');
     console.log('================================');
@@ -152,16 +214,16 @@ export async function parseLoadingNote(base64Image: string, mimeType: string): P
       netWeightKg: parseNumber(findFieldValue(['qnt-in-kg'], fieldMap, entityMap)) || 0,
       
       // Volume - use exact 'quantita-consegnata' field and convert to number
-      volumeLiters: parseNumber(findFieldValue(['quantita-consegnata'], fieldMap, entityMap)) || 0,
+      volumeLiters: parseNumber(findFieldValue(['quantita-consegnata', 'litri'], fieldMap, entityMap)) || 0,
 
       // Notes include driver and density info
       notes: `Autista: ${findFieldValue(['autista'], fieldMap, entityMap) || 'N/A'} | ` +
-             `Densità 15°C: ${findFieldValue(['densita-15'], fieldMap, entityMap) || 'N/A'} | ` +
-             `Densità ambiente: ${findFieldValue(['densita-ambiente'], fieldMap, entityMap) || 'N/A'}`,
+             `Densità 15°C: ${findFieldValue(['densita-15', 'dens15'], fieldMap, entityMap) || 'N/A'} | ` +
+             `Densità ambiente: ${findFieldValue(['densita-ambiente', 'densamb'], fieldMap, entityMap) || 'N/A'}`,
       
       // Campi aggiuntivi dalle entità estratte
-      densityAt15C: parseNumber(findFieldValue(['densita-15'], fieldMap, entityMap)) || 0,
-      densityAtAmbientTemp: parseNumber(findFieldValue(['densita-ambiente'], fieldMap, entityMap)) || 0,
+      densityAt15C: parseNumber(findFieldValue(['densita-15', 'dens15'], fieldMap, entityMap)) || 0,
+      densityAtAmbientTemp: parseNumber(findFieldValue(['densita-ambiente', 'densamb'], fieldMap, entityMap)) || 0,
       committenteName: findFieldValue(['committente'], fieldMap, entityMap) || '',
       companyName: findFieldValue(['societa'], fieldMap, entityMap) || '',
       depotLocation: findFieldValue(['deposito'], fieldMap, entityMap) || '',
@@ -298,7 +360,7 @@ export async function parseEdas(base64Image: string, mimeType: string): Promise<
     // Configuration - processore EDAS
     const projectId = 'tidal-glider-465915-e6';
     const location = 'eu';
-    const processorId = 'cb0cd41d387b97ec'; // Processore per EDAS
+    const processorId = '59e9b6059f7773f6'; // Processore per EDAS
     
     const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
     
@@ -436,10 +498,10 @@ export async function parseEdas(base64Image: string, mimeType: string): Promise<
         description: findFieldValue(['prodotto'], fieldMap, entityMap) || '',
         unCode: findFieldValue(['un', 'code'], fieldMap, entityMap) || '',
         netWeightKg: parseNumber(findFieldValue(['peso-netto-kg'], fieldMap, entityMap)) || 0,
-        volumeAtAmbientTempL: parseNumber(findFieldValue(['volume-temp-ambiente'], fieldMap, entityMap)) || 0,
-        volumeAt15CL: parseNumber(findFieldValue(['volume-a-15'], fieldMap, entityMap)) || 0,
-        densityAtAmbientTemp: parseNumber(findFieldValue(['densita-a-temp-ambiente-lt'], fieldMap, entityMap)) || 0,
-        densityAt15C: parseNumber(findFieldValue(['densità', 'density'], fieldMap, entityMap)) || 0,
+        volumeAtAmbientTempL: parseNumber(findFieldValue(['volume-temp-ambiente', 'litri'], fieldMap, entityMap)) || 0,
+        volumeAt15CL: parseNumber(findFieldValue(['volume-a-15', 'litri'], fieldMap, entityMap)) || 0,
+        densityAtAmbientTemp: parseNumber(findFieldValue(['densita-a-temp-ambiente-lt', 'densamb'], fieldMap, entityMap)) || 0,
+        densityAt15C: parseNumber(findFieldValue(['densità', 'density', 'dens15'], fieldMap, entityMap)) || 0,
       },
     };
 

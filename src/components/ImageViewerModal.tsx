@@ -22,6 +22,37 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
       const margin = 10;
       const imageWidth = pageWidth - (margin * 2);
       
+      // BASTA CALCOLI DEL CAZZO - USA DIMENSIONI ORIGINALI COME NEL MODALE
+      const calculateOptimalDimensions = (originalWidth: number, originalHeight: number, availableHeight: number) => {
+        console.log(`📐 ORIGINALE: ${originalWidth}px x ${originalHeight}px`);
+        
+        // CONVERSIONE SEMPLICE: 1px = 0.75 punti = 0.264583mm (ma chi se ne frega, uso diretto)
+        // Semplicemente scala se troppo grande, altrimenti usa dimensioni originali
+        
+        let finalWidth = originalWidth * 0.264583; // Conversione base px to mm
+        let finalHeight = originalHeight * 0.264583;
+        
+        console.log(`📐 CONVERTITO BASE: ${finalWidth.toFixed(1)}mm x ${finalHeight.toFixed(1)}mm`);
+        
+        // Solo se VERAMENTE troppo grande, scala proporzionalmente
+        if (finalHeight > availableHeight) {
+          const scale = availableHeight / finalHeight;
+          finalHeight = availableHeight;
+          finalWidth = finalWidth * scale;
+          console.log(`📏 RIDIMENSIONATO PER ALTEZZA: scala ${scale.toFixed(3)}`);
+        }
+        
+        if (finalWidth > imageWidth) {
+          const scale = imageWidth / finalWidth;
+          finalWidth = imageWidth;
+          finalHeight = finalHeight * scale;
+          console.log(`📏 RIDIMENSIONATO PER LARGHEZZA: scala ${scale.toFixed(3)}`);
+        }
+        
+        console.log(`✅ FINALE: ${finalWidth.toFixed(1)}mm x ${finalHeight.toFixed(1)}mm`);
+        return { finalWidth, finalHeight };
+      };
+      
       // Funzione per caricare un'immagine e convertirla in base64 con dimensioni
       const loadImage = (url: string): Promise<{dataUrl: string, width: number, height: number}> => {
         return new Promise(async (resolve, reject) => {
@@ -151,21 +182,11 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
 
           const imageData = await loadImage(trip.edasImageUrl);
           
-          // Calcola dimensioni mantenendo aspect ratio
+          // Calcola dimensioni ottimali mantenendo orientamento verticale
           const originalWidth = imageData.width;
           const originalHeight = imageData.height;
-          const aspectRatio = originalHeight / originalWidth;
-          
-          // Calcola dimensioni ottimali per la pagina
-          let finalWidth = imageWidth;
-          let finalHeight = imageWidth * aspectRatio;
-          
-          // Se l'altezza supera lo spazio disponibile, scala in base all'altezza
           const availableHeight = pageHeight - yPosition - margin - 10;
-          if (finalHeight > availableHeight) {
-            finalHeight = availableHeight;
-            finalWidth = finalHeight / aspectRatio;
-          }
+          const { finalWidth, finalHeight } = calculateOptimalDimensions(originalWidth, originalHeight, availableHeight);
           
           // Centra l'immagine orizzontalmente se è più piccola della larghezza disponibile
           const xPosition = margin + (imageWidth - finalWidth) / 2;
@@ -199,21 +220,11 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
 
           const imageData = await loadImage(trip.loadingNoteImageUrl);
           
-          // Calcola dimensioni mantenendo aspect ratio
+          // Calcola dimensioni ottimali mantenendo orientamento verticale
           const originalWidth = imageData.width;
           const originalHeight = imageData.height;
-          const aspectRatio = originalHeight / originalWidth;
-          
-          // Calcola dimensioni ottimali per la pagina
-          let finalWidth = imageWidth;
-          let finalHeight = imageWidth * aspectRatio;
-          
-          // Se l'altezza supera lo spazio disponibile, scala in base all'altezza
           const availableHeight = pageHeight - yPosition - margin - 10;
-          if (finalHeight > availableHeight) {
-            finalHeight = availableHeight;
-            finalWidth = finalHeight / aspectRatio;
-          }
+          const { finalWidth, finalHeight } = calculateOptimalDimensions(originalWidth, originalHeight, availableHeight);
           
           // Centra l'immagine orizzontalmente se è più piccola della larghezza disponibile
           const xPosition = margin + (imageWidth - finalWidth) / 2;
@@ -237,21 +248,11 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
 
           const imageData = await loadImage(trip.cartelloCounterImageUrl);
           
-          // Calcola dimensioni mantenendo aspect ratio
+          // Calcola dimensioni ottimali mantenendo orientamento verticale
           const originalWidth = imageData.width;
           const originalHeight = imageData.height;
-          const aspectRatio = originalHeight / originalWidth;
-          
-          // Calcola dimensioni ottimali per la pagina
-          let finalWidth = imageWidth;
-          let finalHeight = imageWidth * aspectRatio;
-          
-          // Se l'altezza supera lo spazio disponibile, scala in base all'altezza
           const availableHeight = pageHeight - yPosition - margin - 10;
-          if (finalHeight > availableHeight) {
-            finalHeight = availableHeight;
-            finalWidth = finalHeight / aspectRatio;
-          }
+          const { finalWidth, finalHeight } = calculateOptimalDimensions(originalWidth, originalHeight, availableHeight);
           
           // Centra l'immagine orizzontalmente se è più piccola della larghezza disponibile
           const xPosition = margin + (imageWidth - finalWidth) / 2;

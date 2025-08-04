@@ -232,16 +232,19 @@ export default function AdminDashboard() {
                 
                 return {
                   'Società': getDisplayCompanyName(trip.loadingNoteData?.companyName),
-                  'Deposito': trip.loadingNoteData?.shipperName || 'N/A',
+                  'Deposito': trip.loadingNoteData?.depotLocation || trip.loadingNoteData?.shipperName || 'N/A',
                   'Data': trip.loadingNoteData?.loadingDate || 'N/A',
                   'Cliente': trip.loadingNoteData?.consigneeName || 'N/A',
+                  'Destinazione': trip.loadingNoteData?.destinationName || 'N/A',
                   'Prodotto': trip.loadingNoteData?.productDescription || 'N/A',
                   'Quantità Consegnata (LITRI)': trip.loadingNoteData?.volumeLiters || 'N/A',
                   'Densità a 15°': trip.loadingNoteData?.densityAt15C || 'N/A',
-                  'Densità Ambiente': trip.edasData?.productInfo?.densityAtAmbientTemp || 'N/A',
+                  'Densità Ambiente': trip.loadingNoteData?.densityAtAmbientTemp || trip.edasData?.productInfo?.densityAtAmbientTemp || 'N/A',
                   'Quantità in KG': trip.loadingNoteData?.netWeightKg || 'N/A',
-                  'Vettore': driverCarriers.join(', ') || 'N/A',
+                  'Vettore': trip.loadingNoteData?.carrierName || driverCarriers.join(', ') || 'N/A',
                   'Autista': trip.loadingNoteData?.driverName || trip.driverName || 'N/A',
+                  'Committente': trip.loadingNoteData?.committenteName || 'N/A',
+                  'Fornitore': trip.loadingNoteData?.supplierLocation || 'N/A',
                   'Numero DAS': trip.loadingNoteData?.documentNumber || 'N/A'
                 };
               });

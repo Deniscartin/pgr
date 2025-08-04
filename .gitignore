@@ -44,3 +44,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Google Cloud Service Account credentials
+*tidal-glider*.json
+*.service-account.json
+
