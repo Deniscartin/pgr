@@ -11,7 +11,8 @@ import {
   Users, 
   CheckCircle,
   Clock,
-  UserPlus
+  UserPlus,
+  Archive
 } from 'lucide-react';
 import CreateTripModal from './CreateTripModal';
 import CreateDriverModal from './CreateDriverModal';
@@ -22,6 +23,7 @@ import ManageOrderModal from './ManageOrderModal';
 import ImageViewerModal from './ImageViewerModal';
 import TripsTable from './TripsTable';
 import TripDetailModal from './TripDetailModal';
+import ArchiveModal from './ArchiveModal';
 import { getDisplayCompanyName } from '@/lib/companyUtils';
 import * as XLSX from 'xlsx';
 
@@ -39,6 +41,7 @@ export default function AdminDashboard() {
   const [showAssignTrip, setShowAssignTrip] = useState(false);
   const [showManageOrder, setShowManageOrder] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [selectedTripForDetail, setSelectedTripForDetail] = useState<Trip | null>(null);
@@ -326,6 +329,13 @@ export default function AdminDashboard() {
             <FileText className="w-4 h-4 mr-2" />
             Esporta Dati
           </button>
+          <button
+            onClick={() => setShowArchive(true)}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
+          >
+            <Archive className="w-4 h-4 mr-2" />
+            Archivio Server
+          </button>
         </div>
 
         {/* Trips Table */}
@@ -443,6 +453,12 @@ export default function AdminDashboard() {
             throw error;
           }
         }}
+      />
+
+      {/* Archive Modal */}
+      <ArchiveModal
+        isOpen={showArchive}
+        onClose={() => setShowArchive(false)}
       />
     </div>
   );
