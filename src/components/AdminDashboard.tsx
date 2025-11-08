@@ -13,7 +13,7 @@ import {
   Clock,
   UserPlus
 } from 'lucide-react';
-import CreateOrderModal from './CreateOrderModal';
+import CreateTripModal from './CreateTripModal';
 import CreateDriverModal from './CreateDriverModal';
 import CreateOperatorModal from './CreateOperatorModal';
 import CreateInvoiceManagerModal from './CreateInvoiceManagerModal';
@@ -27,11 +27,12 @@ import * as XLSX from 'xlsx';
 
 export default function AdminDashboard() {
   const { userProfile, logout } = useAuth();
-  const { orders, loading: ordersLoading, deleteOrder, updateOrder } = useOrders();
-  const { trips, loading: tripsLoading, deleteTrip, updateTrip } = useTrips();
+  const { orders, loading: ordersLoading, deleteOrder, updateOrder, addOrder } = useOrders();
+  const { trips, loading: tripsLoading, deleteTrip, updateTrip, addTrip } = useTrips();
   const { drivers, loading: driversLoading } = useDrivers();
   
-  const [showCreateOrder, setShowCreateOrder] = useState(false);
+  const [showCreateTripModal, setShowCreateTripModal] = useState(false);
+  const [isCreatingTrip, setIsCreatingTrip] = useState(false);
   const [showCreateDriver, setShowCreateDriver] = useState(false);
   const [showCreateOperator, setShowCreateOperator] = useState(false);
   const [showCreateInvoiceManager, setShowCreateInvoiceManager] = useState(false);
@@ -76,6 +77,72 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Errore durante l\'eliminazione:', error);
       alert('Errore durante l\'eliminazione del viaggio');
+    }
+  };
+
+  const handleCreateTripFromImages = async (imageUrls: {
+    edasImageUrl: string;
+    loadingNoteImageUrl: string;
+    cartelloCounterImageUrl: string;
+  }) => {
+    if (!userProfile) {
+      alert('Profilo utente non trovato.');
+      return;
+    }
+    setIsCreatingTrip(true);
+    try {
+      // 1. Create a placeholder order
+      const newOrderData: Omit<Order, 'id' | 'createdAt' | 'updatedAt'> = {
+        orderNumber: `TEMP_${Date.now()}`,
+        customerName: 'DA ESTRARRE',
+        customerCode: 'TEMP',
+        deliveryAddress: 'DA ESTRARRE',
+        destinationCode: 'TEMP',
+        product: 'DA ESTRARRE',
+        quantity: 0,
+        quantityUnit: 'LT',
+        status: 'completato', // Order is created as completed since trip is being processed
+        notes: 'Ordine temporaneo - documenti in elaborazione',
+        createdBy: userProfile.id,
+      };
+      const newOrder = await addOrder(newOrderData);
+
+      // 2. Create the trip, linking it to the new order
+      const newTripData: Omit<Trip, 'id' | 'createdAt' | 'updatedAt'> = {
+        orderId: newOrder.id,
+        driverId: userProfile.id,
+        driverName: userProfile.name,
+        status: 'elaborazione', // Trip starts in processing status
+        // Save only original image URLs for now
+        edasImageUrl: imageUrls.edasImageUrl,
+        loadingNoteImageUrl: imageUrls.loadingNoteImageUrl,
+        cartelloCounterImageUrl: imageUrls.cartelloCounterImageUrl,
+        assignedBy: userProfile.id,
+      };
+      const addedTrip = await addTrip(newTripData);
+
+      // 3. Immediately trigger background processing via API route
+      fetch('/api/process-trip-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          tripId: addedTrip.id,
+          orderId: newOrder.id,
+          driverId: userProfile.id,
+          edasImageUrl: imageUrls.edasImageUrl, 
+          loadingNoteImageUrl: imageUrls.loadingNoteImageUrl,
+          cartelloCounterImageUrl: imageUrls.cartelloCounterImageUrl,
+        }),
+      });
+
+      // 4. Close modal immediately - user can start driving
+      setShowCreateTripModal(false);
+
+    } catch (error) {
+      console.error("Error creating trip from images:", error);
+      alert(error instanceof Error ? error.message : "Si è verificato un errore sconosciuto");
+    } finally {
+      setIsCreatingTrip(false);
     }
   };
 
@@ -197,11 +264,11 @@ export default function AdminDashboard() {
         {/* Actions */}
         <div className="mb-8 flex flex-wrap gap-4">
           <button
-            onClick={() => setShowCreateOrder(true)}
+            onClick={() => setShowCreateTripModal(true)}
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
           >
             <Plus className="w-4 h-4 mr-2" />
-            Nuovo Ordine
+            Scansione Viaggio
           </button>
           <button
             onClick={() => setShowCreateDriver(true)}
@@ -242,7 +309,7 @@ export default function AdminDashboard() {
                   'Densità Ambiente': trip.loadingNoteData?.densityAtAmbientTemp || trip.edasData?.productInfo?.densityAtAmbientTemp || 'N/A',
                   'Quantità in KG': trip.loadingNoteData?.netWeightKg || 'N/A',
                   'Vettore': trip.loadingNoteData?.carrierName || driverCarriers.join(', ') || 'N/A',
-                  'Autista': trip.loadingNoteData?.driverName || trip.driverName || 'N/A',
+                  'Autista': drivers.find(d => d.id === trip.driverId)?.name || 'N/A',
                   'Committente': trip.loadingNoteData?.committenteName || 'N/A',
                   'Fornitore': trip.loadingNoteData?.supplierLocation || 'N/A',
                   'Numero DAS': trip.loadingNoteData?.documentNumber || 'N/A'
@@ -272,9 +339,11 @@ export default function AdminDashboard() {
       </main>
 
       {/* Modals */}
-      {showCreateOrder && (
-        <CreateOrderModal 
-          onClose={() => setShowCreateOrder(false)}
+      {showCreateTripModal && (
+        <CreateTripModal
+          onConfirm={handleCreateTripFromImages}
+          onClose={() => setShowCreateTripModal(false)}
+          isCreating={isCreatingTrip}
         />
       )}
       

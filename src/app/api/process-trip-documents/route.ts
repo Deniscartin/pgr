@@ -3,14 +3,15 @@ import { doc, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ParsedEDASData, ParsedLoadingNoteData, ValidationResult } from '@/lib/types';
 import { parseLoadingNote } from '@/lib/documentParsers';
+import { analyzeDocumentsForMultipleTrips, DocumentType } from '@/lib/aiDocumentAnalysis';
 
 export async function POST(request: NextRequest) {
   try {
-    const { tripId, edasImageUrl, loadingNoteImageUrl } = await request.json();
+    const { tripId, orderId, driverId, edasImageUrl, loadingNoteImageUrl, cartelloCounterImageUrl } = await request.json();
 
-    if (!tripId || !edasImageUrl || !loadingNoteImageUrl) {
+    if (!tripId || !orderId || !driverId || !edasImageUrl || !loadingNoteImageUrl || !cartelloCounterImageUrl) {
       return NextResponse.json(
-        { error: 'Trip ID e URLs delle immagini sono richiesti' },
+        { error: 'Trip ID, Order ID, Driver ID e URLs delle immagini sono richiesti' },
         { status: 400 }
       );
     }
@@ -25,7 +26,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Inizio processamento documenti per trip ${tripId}`);
+    console.log(`🚀 Inizio processamento documenti per trip ${tripId}`);
+
+    // Step 1: AI Analysis to identify document types and determine trip structure
+    console.log('🤖 Step 1: AI Analysis to identify document types and trip structure');
+    const imageUrls = [edasImageUrl, loadingNoteImageUrl, cartelloCounterImageUrl];
+    const multiTripAnalysis = await analyzeDocumentsForMultipleTrips(imageUrls);
+    
+    console.log('📋 AI Analysis Results:', multiTripAnalysis.analysis);
+    console.log('🚛 Trip Structure:', multiTripAnalysis.trips);
+
+    // Step 2: Handle multiple trips scenario
+    if (multiTripAnalysis.trips.length > 1) {
+      console.log(`🚛🚛 Creating ${multiTripAnalysis.trips.length} separate trips`);
+      return await handleMultipleTrips(multiTripAnalysis, tripId, orderId, driverId);
+    }
+
+    // Step 3: Handle single trip (standard or fallback mode)
+    const singleTrip = multiTripAnalysis.trips[0];
+    console.log('🚛 Processing single trip:', singleTrip);
 
     const downloadImageAsBase64 = async (imageUrl: string): Promise<{ base64: string; mimeType: string }> => {
       try {
@@ -75,20 +94,24 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    // e-DAS: Salva solo come immagine (nessun processamento OCR)
-    console.log('e-DAS salvato come immagine (nessun processamento OCR)');
-    const edasData: ParsedEDASData | null = null;
-
-    // Processa solo la Nota di Carico con OCR
+    // Step 4: Process the Loading Note with OCR (if available)
     let loadingNoteData: ParsedLoadingNoteData | null = null;
-    try {
-      console.log('Processamento Nota di Carico con OCR...');
-      const { base64, mimeType } = await downloadImageAsBase64(loadingNoteImageUrl);
-      loadingNoteData = await parseLoadingNote(base64, mimeType);
-      console.log('Nota di Carico processata con successo');
-    } catch (error) {
-      console.error('Errore nel processamento Nota di Carico:', error);
+    if (singleTrip.documents.loadingNote) {
+      try {
+        console.log('📄 Step 4: Processing Loading Note with OCR...');
+        const { base64, mimeType } = await downloadImageAsBase64(singleTrip.documents.loadingNote);
+        loadingNoteData = await parseLoadingNote(base64, mimeType);
+        console.log('✅ Loading Note processed successfully');
+      } catch (error) {
+        console.error('❌ Error processing Loading Note:', error);
+      }
+    } else {
+      console.warn('⚠️ No Loading Note available - using e-DAS fallback mode');
     }
+
+    // Step 5: e-DAS and Counter are saved as images only (no OCR processing)
+    console.log('📸 Step 5: e-DAS and Counter saved as images (no OCR processing)');
+    const edasData: ParsedEDASData | null = null;
 
     // Aggiorna l'ordine con i dati della Nota di Carico se disponibili
     if (loadingNoteData) {
@@ -116,11 +139,20 @@ export async function POST(request: NextRequest) {
     // Nessuna validazione incrociata dato che l'e-DAS non viene più processato
     const validationResults: ValidationResult[] = [];
 
-    // Aggiorna il trip con i dati processati
+    // Step 6: Update trip with processed data and correct image URLs
+    console.log('💾 Step 6: Updating trip with processed data and correct image URLs');
     const updateData: any = {
       updatedAt: Timestamp.now(),
       status: 'completato',
-      completedAt: Timestamp.now()
+      completedAt: Timestamp.now(),
+      // Store images in correct fields based on AI analysis
+      edasImageUrl: singleTrip.documents.edas?.[0] || edasImageUrl, // AI-identified e-DAS or fallback
+      loadingNoteImageUrl: singleTrip.documents.loadingNote || loadingNoteImageUrl, // AI-identified Loading Note or fallback  
+      cartelloCounterImageUrl: singleTrip.documents.cartelloCounter || cartelloCounterImageUrl, // AI-identified Counter or fallback
+      // Store AI analysis results for debugging/verification
+      aiAnalysisResults: multiTripAnalysis.analysis,
+      tripStructure: singleTrip,
+      processingMode: singleTrip.documents.loadingNote ? 'standard' : 'edas_fallback'
     };
 
     if (edasData) {
@@ -135,14 +167,19 @@ export async function POST(request: NextRequest) {
 
     await updateDoc(tripRef, updateData);
 
-    console.log(`Processamento completato per trip ${tripId}`);
+    console.log(`🎉 Processamento completato per trip ${tripId}`);
 
     return NextResponse.json({
       success: true,
       tripId,
-      edasProcessed: false, // e-DAS salvato solo come immagine
+      processingMode: singleTrip.documents.loadingNote ? 'standard' : 'edas_fallback',
+      aiAnalysisResults: multiTripAnalysis.analysis,
+      tripStructure: singleTrip,
+      edasProcessed: false, // e-DAS saved as image only
       loadingNoteProcessed: !!loadingNoteData,
-      validationResults
+      cartelloCounterProcessed: false, // Counter saved as image only
+      validationResults,
+      multipleTripsCreated: false
     });
 
   } catch (error) {
@@ -202,4 +239,163 @@ function validateDocuments(edasData: ParsedEDASData, loadingNoteData: ParsedLoad
   }
 
   return results;
-} 
+}
+
+// Funzione per gestire viaggi multipli (quando sono rilevati 2 o più e-DAS)
+async function handleMultipleTrips(multiTripAnalysis: any, originalTripId: string, originalOrderId: string, driverId: string) {
+  console.log('🚛🚛 Handling multiple trips creation...');
+  
+  const { addDoc, collection } = await import('firebase/firestore');
+  const createdTrips: string[] = [];
+  
+  try {
+    // Per ogni viaggio identificato dall'AI
+    for (let i = 0; i < multiTripAnalysis.trips.length; i++) {
+      const tripStructure = multiTripAnalysis.trips[i];
+      console.log(`📝 Creating trip ${i + 1}/${multiTripAnalysis.trips.length}:`, tripStructure);
+      
+      // Crea un nuovo ordine per ogni viaggio (eccetto il primo che usa quello esistente)
+      let orderId = originalOrderId;
+      if (i > 0) {
+        const newOrderData = {
+          orderNumber: `TEMP_MULTI_${Date.now()}_${i}`,
+          customerName: 'DA ESTRARRE',
+          customerCode: 'TEMP',
+          deliveryAddress: 'DA ESTRARRE',
+          destinationCode: 'TEMP',
+          product: 'DA ESTRARRE',
+          quantity: 0,
+          quantityUnit: 'LT',
+          status: 'completato',
+          notes: `Ordine multiplo ${i + 1} - documenti in elaborazione`,
+          createdBy: driverId,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now()
+        };
+        
+        const newOrderRef = await addDoc(collection(db, 'orders'), newOrderData);
+        orderId = newOrderRef.id;
+        console.log(`✅ Created new order ${orderId} for trip ${i + 1}`);
+      }
+      
+      // Crea il viaggio (il primo aggiorna quello esistente, gli altri sono nuovi)
+      let tripId = originalTripId;
+      if (i > 0) {
+        const newTripData = {
+          orderId: orderId,
+          driverId: driverId,
+          driverName: '', // Will be filled from user profile
+          status: 'elaborazione',
+          edasImageUrl: tripStructure.documents.edas?.[0] || '',
+          loadingNoteImageUrl: tripStructure.documents.loadingNote || '',
+          cartelloCounterImageUrl: tripStructure.documents.cartelloCounter || '',
+          assignedBy: driverId,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+          aiAnalysisResults: multiTripAnalysis.analysis,
+          tripStructure: tripStructure,
+          processingMode: tripStructure.documents.loadingNote ? 'standard' : 'edas_fallback',
+          isMultiTripPart: true,
+          multiTripIndex: i + 1,
+          multiTripTotal: multiTripAnalysis.trips.length
+        };
+        
+        const newTripRef = await addDoc(collection(db, 'trips'), newTripData);
+        tripId = newTripRef.id;
+        console.log(`✅ Created new trip ${tripId} for trip ${i + 1}`);
+      } else {
+        // Aggiorna il viaggio originale
+        const tripRef = doc(db, 'trips', originalTripId);
+        const updateData = {
+          updatedAt: Timestamp.now(),
+          edasImageUrl: tripStructure.documents.edas?.[0] || '',
+          loadingNoteImageUrl: tripStructure.documents.loadingNote || '',
+          cartelloCounterImageUrl: tripStructure.documents.cartelloCounter || '',
+          aiAnalysisResults: multiTripAnalysis.analysis,
+          tripStructure: tripStructure,
+          processingMode: tripStructure.documents.loadingNote ? 'standard' : 'edas_fallback',
+          isMultiTripPart: true,
+          multiTripIndex: 1,
+          multiTripTotal: multiTripAnalysis.trips.length
+        };
+        
+        await updateDoc(tripRef, updateData);
+        console.log(`✅ Updated original trip ${originalTripId} as trip 1`);
+      }
+      
+      createdTrips.push(tripId);
+      
+      // Processa i documenti per questo viaggio
+      await processDocumentsForTrip(tripId, tripStructure);
+    }
+    
+    console.log(`🎉 Successfully created ${multiTripAnalysis.trips.length} trips:`, createdTrips);
+    
+    return NextResponse.json({
+      success: true,
+      multipleTripsCreated: true,
+      totalTrips: multiTripAnalysis.trips.length,
+      createdTripIds: createdTrips,
+      aiAnalysisResults: multiTripAnalysis.analysis,
+      tripStructures: multiTripAnalysis.trips
+    });
+    
+  } catch (error) {
+    console.error('❌ Error creating multiple trips:', error);
+    throw error;
+  }
+}
+
+// Funzione per processare i documenti di un singolo viaggio
+async function processDocumentsForTrip(tripId: string, tripStructure: any) {
+  console.log(`📄 Processing documents for trip ${tripId}:`, tripStructure);
+  
+  // Per ora processiamo solo la Loading Note se presente
+  if (tripStructure.documents.loadingNote) {
+    try {
+      console.log('📄 Processing Loading Note with OCR...');
+      
+      // Scarica e processa la Loading Note
+      const response = await fetch(tripStructure.documents.loadingNote);
+      const buffer = await response.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString('base64');
+      const mimeType = 'image/jpeg';
+      
+      const loadingNoteData = await parseLoadingNote(base64, mimeType);
+      
+      // Aggiorna il viaggio con i dati processati
+      const tripRef = doc(db, 'trips', tripId);
+      await updateDoc(tripRef, {
+        loadingNoteData: loadingNoteData,
+        status: 'completato',
+        completedAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      });
+      
+      console.log(`✅ Loading Note processed for trip ${tripId}`);
+      
+    } catch (error) {
+      console.error(`❌ Error processing Loading Note for trip ${tripId}:`, error);
+      
+      // Marca il viaggio come completato anche se il processamento fallisce
+      const tripRef = doc(db, 'trips', tripId);
+      await updateDoc(tripRef, {
+        status: 'completato',
+        completedAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        processingError: 'Loading Note processing failed'
+      });
+    }
+  } else {
+    // Nessuna Loading Note - modalità fallback e-DAS
+    console.log(`⚠️ No Loading Note for trip ${tripId} - using e-DAS fallback mode`);
+    
+    const tripRef = doc(db, 'trips', tripId);
+    await updateDoc(tripRef, {
+      status: 'completato',
+      completedAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+      processingMode: 'edas_fallback'
+    });
+  }
+}

@@ -67,6 +67,20 @@ export async function parseLoadingNote(base64Image: string, mimeType: string): P
     console.log('Form fields:', document.pages?.[0]?.formFields?.length || 0);
     console.log('Tables:', document.pages?.[0]?.tables?.length || 0);
     console.log('===============================================');
+    
+    // Log all entity properties
+    console.log(`🔍 ALL ENTITIES COMPLETE (${processorLabel}):`);
+    console.log('==============================================');
+    if (document.entities && document.entities.length > 0) {
+      document.entities.forEach((entity: any, index: number) => {
+        console.log(`Entity ${index + 1}:`);
+        console.log(JSON.stringify(entity, null, 2));
+        console.log('-------------------------------------------');
+      });
+    } else {
+      console.log('No entities found');
+    }
+    console.log('==============================================');
 
     return document;
   };
@@ -399,6 +413,20 @@ export async function parseEdas(base64Image: string, mimeType: string): Promise<
     console.log('Form fields:', document.pages?.[0]?.formFields?.length || 0);
     console.log('Tables:', document.pages?.[0]?.tables?.length || 0);
     console.log('===============================================');
+    
+    // Log all entity properties
+    console.log('🔍 ALL ENTITIES COMPLETE (e-DAS):');
+    console.log('==================================');
+    if (document.entities && document.entities.length > 0) {
+      document.entities.forEach((entity: any, index: number) => {
+        console.log(`Entity ${index + 1}:`);
+        console.log(JSON.stringify(entity, null, 2));
+        console.log('-----------------------------------');
+      });
+    } else {
+      console.log('No entities found');
+    }
+    console.log('==================================');
 
     // Extract key-value pairs and entities
     const formFields = document.pages?.[0]?.formFields || [];

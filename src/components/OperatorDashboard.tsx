@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTrips, useOrders, useDrivers } from '@/hooks/useFirestore';
-import { Trip, Order, User } from '@/lib/types';
+import { Trip, Order } from '@/lib/types';
 import { 
   LogOut, 
   Users, 
@@ -13,8 +13,10 @@ import {
   Clock,
   AlertTriangle,
   Download,
-  Truck
+  Truck,
+  Plus
 } from 'lucide-react';
+import CreateTripModal from './CreateTripModal';
 import CreateDriverModal from './CreateDriverModal';
 import TripsTable from './TripsTable';
 import TripDetailModal from './TripDetailModal';
@@ -24,8 +26,8 @@ import * as XLSX from 'xlsx';
 
 export default function OperatorDashboard() {
   const { userProfile, logout } = useAuth();
-  const { trips, loading: tripsLoading, deleteTrip } = useTrips();
-  const { orders, loading: ordersLoading } = useOrders();
+  const { trips, loading: tripsLoading, deleteTrip, addTrip } = useTrips();
+  const { orders, loading: ordersLoading, addOrder } = useOrders();
   
   // Debug: log dei carriers dell'operatore
   console.log('Operatore carriers:', userProfile?.carriers);
@@ -37,6 +39,8 @@ export default function OperatorDashboard() {
   // Since we can't use multiple useDrivers hooks, we'll get all drivers and filter
   const { drivers, loading: driversLoading } = useDrivers();
   
+  const [showCreateTripModal, setShowCreateTripModal] = useState(false);
+  const [isCreatingTrip, setIsCreatingTrip] = useState(false);
   const [showCreateDriver, setShowCreateDriver] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedTripForDetail, setSelectedTripForDetail] = useState<Trip | null>(null);
@@ -93,6 +97,72 @@ export default function OperatorDashboard() {
     }
   };
 
+  const handleCreateTripFromImages = async (imageUrls: {
+    edasImageUrl: string;
+    loadingNoteImageUrl: string;
+    cartelloCounterImageUrl: string;
+  }) => {
+    if (!userProfile) {
+      alert('Profilo utente non trovato.');
+      return;
+    }
+    setIsCreatingTrip(true);
+    try {
+      // 1. Create a placeholder order
+      const newOrderData: Omit<Order, 'id' | 'createdAt' | 'updatedAt'> = {
+        orderNumber: `TEMP_${Date.now()}`,
+        customerName: 'DA ESTRARRE',
+        customerCode: 'TEMP',
+        deliveryAddress: 'DA ESTRARRE',
+        destinationCode: 'TEMP',
+        product: 'DA ESTRARRE',
+        quantity: 0,
+        quantityUnit: 'LT',
+        status: 'completato', // Order is created as completed since trip is being processed
+        notes: 'Ordine temporaneo - documenti in elaborazione',
+        createdBy: userProfile.id,
+      };
+      const newOrder = await addOrder(newOrderData);
+
+      // 2. Create the trip, linking it to the new order
+      const newTripData: Omit<Trip, 'id' | 'createdAt' | 'updatedAt'> = {
+        orderId: newOrder.id,
+        driverId: userProfile.id,
+        driverName: userProfile.name,
+        status: 'elaborazione', // Trip starts in processing status
+        // Save only original image URLs for now
+        edasImageUrl: imageUrls.edasImageUrl,
+        loadingNoteImageUrl: imageUrls.loadingNoteImageUrl,
+        cartelloCounterImageUrl: imageUrls.cartelloCounterImageUrl,
+        assignedBy: userProfile.id,
+      };
+      const addedTrip = await addTrip(newTripData);
+
+      // 3. Immediately trigger background processing via API route
+      fetch('/api/process-trip-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          tripId: addedTrip.id,
+          orderId: newOrder.id,
+          driverId: userProfile.id,
+          edasImageUrl: imageUrls.edasImageUrl, 
+          loadingNoteImageUrl: imageUrls.loadingNoteImageUrl,
+          cartelloCounterImageUrl: imageUrls.cartelloCounterImageUrl,
+        }),
+      });
+
+      // 4. Close modal immediately - user can start driving
+      setShowCreateTripModal(false);
+
+    } catch (error) {
+      console.error("Error creating trip from images:", error);
+      alert(error instanceof Error ? error.message : "Si è verificato un errore sconosciuto");
+    } finally {
+      setIsCreatingTrip(false);
+    }
+  };
+
   // Export function for operator's trips
   const handleExport = () => {
     const dataToExport = myTrips.map(trip => {
@@ -122,7 +192,7 @@ export default function OperatorDashboard() {
         'Densità Ambiente': trip.loadingNoteData?.densityAtAmbientTemp || trip.edasData?.productInfo?.densityAtAmbientTemp || 'N/A',
         'Quantità in KG': trip.loadingNoteData?.netWeightKg || 'N/A',
         'Vettore': trip.loadingNoteData?.carrierName || driverCarriers.join(', ') || 'N/A',
-        'Autista': trip.loadingNoteData?.driverName || trip.driverName || 'N/A',
+        'Autista': drivers.find(d => d.id === trip.driverId)?.name || 'N/A',
         'Committente': trip.loadingNoteData?.committenteName || 'N/A',
         'Fornitore': trip.loadingNoteData?.supplierLocation || 'N/A',
         'Numero DAS': trip.loadingNoteData?.documentNumber || 'N/A'
@@ -319,8 +389,16 @@ export default function OperatorDashboard() {
         {/* Actions */}
         <div className="mb-8 flex flex-wrap gap-4">
           <button
-            onClick={() => setShowCreateDriver(true)}
+            onClick={() => setShowCreateTripModal(true)}
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Scansione Viaggio
+          </button>
+          
+          <button
+            onClick={() => setShowCreateDriver(true)}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
           >
             <UserPlus className="w-4 h-4 mr-2" />
             Crea Nuovo Autista
@@ -432,6 +510,14 @@ export default function OperatorDashboard() {
       </main>
 
       {/* Modals */}
+      {showCreateTripModal && (
+        <CreateTripModal
+          onConfirm={handleCreateTripFromImages}
+          onClose={() => setShowCreateTripModal(false)}
+          isCreating={isCreatingTrip}
+        />
+      )}
+      
       {showCreateDriver && (
         <CreateDriverModal
           onClose={() => setShowCreateDriver(false)}

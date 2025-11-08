@@ -23,17 +23,17 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
 
 
   
-  // Get unique drivers for filter (same as modal)
+  // Get unique drivers for filter using database driver names only
   const uniqueDrivers = useMemo(() => {
     const driverSet = new Set<string>();
     trips.forEach(trip => {
-      const driverName = trip.loadingNoteData?.driverName || trip.driverName;
-      if (driverName && driverName.trim()) {
-        driverSet.add(driverName.trim());
+      const driver = drivers.find(d => d.id === trip.driverId);
+      if (driver && driver.name && driver.name.trim()) {
+        driverSet.add(driver.name.trim());
       }
     });
     return Array.from(driverSet).sort();
-  }, [trips]);
+  }, [trips, drivers]);
 
   // Get unique carriers for filter (from driver data, same as modal)
   const uniqueCarriers = useMemo(() => {
@@ -62,11 +62,11 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
       });
     }
 
-    // Driver filter (same as modal)
+    // Driver filter using database driver names only
     if (driverFilter !== 'all') {
       filtered = filtered.filter(trip => {
-        const driverName = trip.loadingNoteData?.driverName || trip.driverName;
-        return driverName === driverFilter;
+        const driver = drivers.find(d => d.id === trip.driverId);
+        return driver?.name === driverFilter;
       });
     }
 
@@ -91,10 +91,9 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
       filtered = filtered.filter(trip => {
         const driver = drivers.find(d => d.id === trip.driverId);
         const driverCarriers = driver?.carriers || (driver?.carrier ? [driver.carrier] : []);
-        const driverName = trip.loadingNoteData?.driverName || trip.driverName;
         
         return (
-          driverName?.toLowerCase().includes(lowercasedSearchTerm) ||
+          driver?.name?.toLowerCase().includes(lowercasedSearchTerm) ||
           trip.loadingNoteData?.documentNumber?.toLowerCase().includes(lowercasedSearchTerm) ||
           trip.loadingNoteData?.consigneeName?.toLowerCase().includes(lowercasedSearchTerm) ||
           trip.loadingNoteData?.productDescription?.toLowerCase().includes(lowercasedSearchTerm) ||
@@ -285,7 +284,7 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
                       </div> */}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {trip.loadingNoteData?.driverName || trip.driverName || 'N/A'}
+                      {drivers.find(d => d.id === trip.driverId)?.name || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">{trip.loadingNoteData?.consigneeName || 'N/A'}</div>
