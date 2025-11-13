@@ -14,7 +14,9 @@ import {
   AlertTriangle,
   Download,
   Truck,
-  Plus
+  Plus,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import CreateTripModal from './CreateTripModal';
 import CreateDriverModal from './CreateDriverModal';
@@ -45,6 +47,7 @@ export default function OperatorDashboard() {
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedTripForDetail, setSelectedTripForDetail] = useState<Trip | null>(null);
   const [selectedTripForImages, setSelectedTripForImages] = useState<Trip | null>(null);
+  const [isDriversSectionOpen, setIsDriversSectionOpen] = useState(false);
 
   // Filter drivers by operator's carriers
   const myDrivers = useMemo(() => {
@@ -415,67 +418,84 @@ export default function OperatorDashboard() {
           )}
         </div>
 
-        {/* Drivers Table */}
+        {/* Drivers Table - Collapsible */}
         <div className="bg-white shadow rounded-lg mb-8">
           <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-              I Miei Autisti ({myDrivers.length})
-            </h3>
+            <div 
+              className="flex justify-between items-center cursor-pointer hover:bg-gray-50 -mx-4 -mt-5 px-4 pt-5 pb-4 rounded-t-lg transition-colors"
+              onClick={() => setIsDriversSectionOpen(!isDriversSectionOpen)}
+            >
+              <h3 className="text-lg leading-6 font-medium text-gray-900 flex items-center">
+                <Users className="h-5 w-5 mr-2 text-gray-500" />
+                I Miei Autisti ({myDrivers.length})
+              </h3>
+              <button className="text-gray-500 hover:text-gray-700 transition-colors">
+                {isDriversSectionOpen ? (
+                  <ChevronUp className="h-5 w-5" />
+                ) : (
+                  <ChevronDown className="h-5 w-5" />
+                )}
+              </button>
+            </div>
             
-            {myDrivers.length > 0 ? (
-              <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-                <table className="min-w-full divide-y divide-gray-300">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Nome
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Email
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Vettore
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Viaggi Completati
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {myDrivers.map((driver) => {
-                      const driverTrips = myTrips.filter(trip => trip.driverId === driver.id);
-                      const driverCompletedTrips = driverTrips.filter(trip => trip.status === 'completato');
-                      const driverCarriers = driver.carriers || (driver.carrier ? [driver.carrier] : []);
-                      
-                      return (
-                        <tr key={driver.id}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {driver.name}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {driver.email}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              {driverCarriers.join(', ') || 'N/A'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {driverCompletedTrips.length} / {driverTrips.length}
-                          </td>
+            {isDriversSectionOpen && (
+              <div className="mt-4">
+                {myDrivers.length > 0 ? (
+                  <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                    <table className="min-w-full divide-y divide-gray-300">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Nome
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Email
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Vettore
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Viaggi Completati
+                          </th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <Users className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-sm font-medium text-gray-900">Nessun autista trovato</h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  Non hai ancora autisti associati al tuo vettore. Crea il primo autista.
-                </p>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {myDrivers.map((driver) => {
+                          const driverTrips = myTrips.filter(trip => trip.driverId === driver.id);
+                          const driverCompletedTrips = driverTrips.filter(trip => trip.status === 'completato');
+                          const driverCarriers = driver.carriers || (driver.carrier ? [driver.carrier] : []);
+                          
+                          return (
+                            <tr key={driver.id}>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {driver.name}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {driver.email}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                  {driverCarriers.join(', ') || 'N/A'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {driverCompletedTrips.length} / {driverTrips.length}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Users className="mx-auto h-12 w-12 text-gray-400" />
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">Nessun autista trovato</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Non hai ancora autisti associati al tuo vettore. Crea il primo autista.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>

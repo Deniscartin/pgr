@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { Trip, Order, User } from '@/lib/types';
 import { Search, ChevronLeft, ChevronRight, Filter, Calendar, User as UserIcon, FileText, Trash2, Truck } from 'lucide-react';
+import { getDisplayCompanyName } from '@/lib/companyUtils';
 
 interface TripsTableProps {
   trips: Trip[];
@@ -253,13 +254,14 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DAS / Ordine</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Autista</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Base di Carico</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prodotto</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stato</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Società</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DAS</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vettore</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Autista</th>
                 <th scope="col" className="relative px-6 py-3">
                   <span className="sr-only">Azioni</span>
                 </th>
@@ -275,20 +277,14 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
                 
                 return (
                   <tr key={trip.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => onViewDetails(trip)}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {trip.loadingNoteData?.documentNumber || trip.id.substring(0,8) + '...'}
-                      </div>
-                      {/* <div className="text-sm text-gray-500">
-                        {order?.orderNumber || 'N/A'}
-                      </div> */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {trip.loadingNoteData?.loadingDate || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {drivers.find(d => d.id === trip.driverId)?.name || 'N/A'}
+                      {trip.loadingNoteData?.shipperName || trip.loadingNoteData?.depotLocation || 'N/A'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{trip.loadingNoteData?.consigneeName || 'N/A'}</div>
-                      <div className="text-sm text-gray-500">{trip.edasData?.recipientInfo?.name || ''}</div>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {trip.loadingNoteData?.consigneeName || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
@@ -298,22 +294,17 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
                         {trip.loadingNoteData?.volumeLiters ? `${trip.loadingNoteData.volumeLiters}L` : ''}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        trip.status === 'completato' ? 'bg-green-100 text-green-800' : 
-                        trip.status === 'in_corso' ? 'bg-yellow-100 text-yellow-800' : 
-                        trip.status === 'assegnato' ? 'bg-blue-100 text-blue-800' :
-                        trip.status === 'elaborazione' ? 'bg-purple-100 text-purple-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {trip.status.replace('_', ' ')}
-                      </span>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {getDisplayCompanyName(trip.loadingNoteData?.companyName)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {trip.loadingNoteData?.loadingDate || 'N/A'}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {trip.loadingNoteData?.documentNumber || trip.id.substring(0,8) + '...'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {driverCarriers.join(', ') || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {driver?.name || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">
