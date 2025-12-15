@@ -1,0 +1,1 @@
+sshpass -p 'xVMxKKapXA7P' ssh root@37.27.247.232 'certbot --nginx -d api.petrolis.it --non-interactive --agree-tos --email admin@petrolis.it --redirect'

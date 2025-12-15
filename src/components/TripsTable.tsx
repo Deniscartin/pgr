@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Trip, Order, User } from '@/lib/types';
 import { Search, ChevronLeft, ChevronRight, Filter, Calendar, User as UserIcon, FileText, Trash2, Truck } from 'lucide-react';
 import { getDisplayCompanyName } from '@/lib/companyUtils';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface TripsTableProps {
   trips: Trip[];
@@ -13,16 +15,62 @@ interface TripsTableProps {
   onDeleteTrip?: (trip: Trip) => void;
 }
 
+interface LoadingBase {
+  code: string;
+  name: string;
+  fullName?: string;
+}
+
 export default function TripsTable({ trips, orders, drivers, onViewDetails, onDeleteTrip }: TripsTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [carrierFilter, setCarrierFilter] = useState('all');
   const [driverFilter, setDriverFilter] = useState('all');
+  const [baseFilter, setBaseFilter] = useState('all');
   const [dateFromFilter, setDateFromFilter] = useState('');
   const [dateToFilter, setDateToFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [loadingBases, setLoadingBases] = useState<LoadingBase[]>([]);
   const itemsPerPage = 10;
 
+  // Load loading bases from Firestore
+  useEffect(() => {
+    const fetchBases = async () => {
+      try {
+        const docRef = doc(db, 'settings', 'loadingBases');
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setLoadingBases(data.bases || []);
+        }
+      } catch (error) {
+        console.error('Error fetching loading bases:', error);
+      }
+    };
+    
+    fetchBases();
+  }, []);
 
+  // Extract base name from DAS number, with fallback to DAS number
+  const getBaseDisplayName = (dasNumber: string | undefined): string => {
+    if (!dasNumber) return 'N/A';
+    
+    const upperDAS = dasNumber.toUpperCase();
+    
+    // Search for two consecutive letters that match valid bases
+    for (let i = 0; i < upperDAS.length - 1; i++) {
+      const twoLetters = upperDAS.substring(i, i + 2);
+      const base = loadingBases.find(b => b.code === twoLetters);
+      
+      if (base) {
+        // Return the name in uppercase (LATINA instead of Latina)
+        return base.name.toUpperCase();
+      }
+    }
+    
+    // Fallback: return the DAS number if no base code found
+    return dasNumber;
+  };
   
   // Get unique drivers for filter using database driver names only
   const uniqueDrivers = useMemo(() => {
@@ -51,6 +99,12 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
     return Array.from(carrierSet).sort();
   }, [trips, drivers]);
 
+  // Get unique bases for filter - only from configured bases in DB
+  const uniqueBases = useMemo(() => {
+    // Return only bases that are actually configured in Firestore
+    return loadingBases.map(base => base.name.toUpperCase()).sort();
+  }, [loadingBases]);
+
   const filteredAndSortedTrips = useMemo(() => {
     let filtered = trips;
 
@@ -68,6 +122,15 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
       filtered = filtered.filter(trip => {
         const driver = drivers.find(d => d.id === trip.driverId);
         return driver?.name === driverFilter;
+      });
+    }
+
+    // Base filter
+    if (baseFilter !== 'all') {
+      filtered = filtered.filter(trip => {
+        const dasNumber = trip.edasData?.documentInfo?.dasNumber || trip.loadingNoteData?.documentNumber;
+        const baseName = getBaseDisplayName(dasNumber);
+        return baseName === baseFilter;
       });
     }
 
@@ -109,7 +172,7 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
       const dateB = b.createdAt ? (b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt as any).getTime()) : 0;
       return dateB - dateA;
     });
-  }, [trips, orders, drivers, searchTerm, carrierFilter, driverFilter, dateFromFilter, dateToFilter]);
+  }, [trips, orders, drivers, searchTerm, carrierFilter, driverFilter, baseFilter, dateFromFilter, dateToFilter, loadingBases]);
 
   const totalPages = Math.ceil(filteredAndSortedTrips.length / itemsPerPage);
   const paginatedTrips = filteredAndSortedTrips.slice(
@@ -127,6 +190,7 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
     setSearchTerm('');
     setCarrierFilter('all');
     setDriverFilter('all');
+    setBaseFilter('all');
     setDateFromFilter('');
     setDateToFilter('');
     setCurrentPage(1);
@@ -167,7 +231,7 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
           </div>
 
           {/* Filter Row */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             {/* Carrier Filter */}
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -204,6 +268,29 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
                 <option value="all">Tutti gli autisti</option>
                 {uniqueDrivers.map(driver => (
                   <option key={driver} value={driver}>{driver}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Base Filter */}
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <select
+                value={baseFilter}
+                onChange={(e) => {
+                  setBaseFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              >
+                <option value="all">Tutte le basi</option>
+                {uniqueBases.map(base => (
+                  <option key={base} value={base}>{base}</option>
                 ))}
               </select>
             </div>
@@ -281,7 +368,7 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
                       {trip.loadingNoteData?.loadingDate || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {trip.loadingNoteData?.shipperName || trip.loadingNoteData?.depotLocation || 'N/A'}
+                      {getBaseDisplayName(trip.edasData?.documentInfo?.dasNumber || trip.loadingNoteData?.documentNumber)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {trip.loadingNoteData?.consigneeName || 'N/A'}

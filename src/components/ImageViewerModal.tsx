@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { Trip } from '../lib/types/index';
 import jsPDF from 'jspdf';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { RefreshCw } from 'lucide-react';
 
 interface ImageViewerModalProps {
   trip: Trip;
@@ -8,10 +11,103 @@ interface ImageViewerModalProps {
   onClose: () => void;
 }
 
+type DocumentType = 'edas' | 'loadingNote' | 'cartelloCounter';
+
+interface ImageAssignment {
+  url: string;
+  assignedAs: DocumentType;
+}
+
 export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerModalProps) {
   const [loading, setLoading] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
+  
+  // Initialize image assignments
+  const [imageAssignments, setImageAssignments] = useState<ImageAssignment[]>(() => {
+    const assignments: ImageAssignment[] = [];
+    if (trip.edasImageUrl) {
+      assignments.push({ url: trip.edasImageUrl, assignedAs: 'edas' });
+    }
+    if (trip.loadingNoteImageUrl) {
+      assignments.push({ url: trip.loadingNoteImageUrl, assignedAs: 'loadingNote' });
+    }
+    if (trip.cartelloCounterImageUrl) {
+      assignments.push({ url: trip.cartelloCounterImageUrl, assignedAs: 'cartelloCounter' });
+    }
+    return assignments;
+  });
+
+  const [hasChanges, setHasChanges] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleAssignmentChange = (index: number, newType: DocumentType) => {
+    const newAssignments = [...imageAssignments];
+    
+    // Find if another image already has this type assigned
+    const existingIndex = newAssignments.findIndex((a, i) => i !== index && a.assignedAs === newType);
+    
+    if (existingIndex !== -1) {
+      // Switch assignments: give the existing image the old type of current image
+      const oldType = newAssignments[index].assignedAs;
+      newAssignments[existingIndex].assignedAs = oldType;
+    }
+    
+    // Assign new type to current image
+    newAssignments[index].assignedAs = newType;
+    setImageAssignments(newAssignments);
+    setHasChanges(true);
+  };
+
+  const handleSaveAndReprocess = async () => {
+    setReprocessing(true);
+    try {
+      // Build new URL assignments
+      const newUrls: {
+        edasImageUrl?: string;
+        loadingNoteImageUrl?: string;
+        cartelloCounterImageUrl?: string;
+      } = {};
+
+      imageAssignments.forEach(assignment => {
+        if (assignment.assignedAs === 'edas') {
+          newUrls.edasImageUrl = assignment.url;
+        } else if (assignment.assignedAs === 'loadingNote') {
+          newUrls.loadingNoteImageUrl = assignment.url;
+        } else if (assignment.assignedAs === 'cartelloCounter') {
+          newUrls.cartelloCounterImageUrl = assignment.url;
+        }
+      });
+
+      // Update trip with new assignments
+      const tripRef = doc(db, 'trips', trip.id);
+      await updateDoc(tripRef, newUrls);
+
+      console.log('✅ Immagini riassegnate, avvio riprocessamento...');
+
+      // Trigger reprocessing
+      const response = await fetch('/api/reprocess-trip-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tripId: trip.id }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Errore nel riprocessamento');
+      }
+
+      alert('✅ Documenti riassegnati e riprocessati con successo!');
+      setHasChanges(false);
+      onClose();
+      window.location.reload(); // Refresh to show new data
+
+    } catch (error) {
+      console.error('❌ Errore:', error);
+      alert('Errore durante il salvataggio e riprocessamento');
+    } finally {
+      setReprocessing(false);
+    }
+  };
 
   const downloadPDF = async () => {
     setLoading(true);
@@ -279,7 +375,7 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
         <div className="flex justify-between items-center p-6 border-b">
           <div>
@@ -287,7 +383,7 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
               Visualizza Documenti - DAS: {trip.edasData?.documentInfo?.dasNumber || 'N/A'}
             </h2>
             <p className="text-sm text-gray-600 mt-1">
-              Autista: {trip.driverName} | Targa: {trip.edasData?.transportInfo?.vehicleId || 'N/A'}
+              Autista: {trip.driverName}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -303,8 +399,34 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
           </div>
         </div>
         
-        <div className="flex justify-end items-center px-6 py-3 border-b bg-gray-50">
+        <div className="flex justify-between items-center px-6 py-3 border-b bg-gray-50">
+          <div className="text-sm text-gray-600">
+            {hasChanges && (
+              <span className="text-orange-600 font-medium">
+                ⚠️ Hai modifiche non salvate
+              </span>
+            )}
+          </div>
           <div className="flex gap-3">
+            {hasChanges && (
+              <button
+                onClick={handleSaveAndReprocess}
+                disabled={reprocessing}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {reprocessing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Riprocessamento...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Salva e Riesegui Scansione
+                  </>
+                )}
+              </button>
+            )}
             <button
               onClick={downloadPDF}
               disabled={loading}
@@ -327,80 +449,62 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
           </div>
         </div>
 
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            {/* e-DAS Images */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">
-                Documenti e-DAS
-              </h3>
-              
-              {trip.edasImageUrl && (
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-gray-700 mb-2">Documento Originale</h4>
-                  <img
-                    src={trip.edasImageUrl}
-                    alt="e-DAS Originale"
-                    className="w-full h-auto rounded-lg border border-gray-300 shadow-sm"
-                  />
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
+          {/* Info Box */}
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h3 className="text-sm font-semibold text-blue-900 mb-2">
+              🔧 Riassegnazione Documenti
+            </h3>
+            <p className="text-xs text-blue-800">
+              Se l'autista ha caricato i documenti nei campi sbagliati, puoi riassegnarli qui.
+              Seleziona il tipo corretto per ogni immagine e clicca "Salva e Riesegui Scansione".
+            </p>
+          </div>
+
+          {/* Image Assignments */}
+          <div className="space-y-6">
+            {imageAssignments.map((assignment, index) => (
+              <div key={index} className="bg-white border-2 border-gray-200 rounded-lg p-6 hover:border-indigo-300 transition-colors">
+                <div className="flex flex-col lg:flex-row gap-6">
+                  {/* Image Preview */}
+                  <div className="lg:w-1/3">
+                    <img
+                      src={assignment.url}
+                      alt={`Documento ${index + 1}`}
+                      className="w-full h-auto rounded-lg border border-gray-300 shadow-sm"
+                    />
+                  </div>
+
+                  {/* Assignment Controls */}
+                  <div className="lg:w-2/3 flex flex-col justify-center">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Questo documento è:
+                    </label>
+                    <select
+                      value={assignment.assignedAs}
+                      onChange={(e) => handleAssignmentChange(index, e.target.value as DocumentType)}
+                      className="block w-full px-4 py-3 text-base border-2 border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg"
+                    >
+                      <option value="edas">📄 e-DAS</option>
+                      <option value="loadingNote">📋 Nota di Carico</option>
+                      <option value="cartelloCounter">📷 Cartellino Conta Litro</option>
+                    </select>
+
+                    {/* Visual indicator */}
+                    <div className="mt-4 p-3 rounded-lg bg-gray-50">
+                      <p className="text-sm text-gray-600">
+                        <strong>Assegnato come:</strong>{' '}
+                        <span className="font-semibold text-indigo-600">
+                          {assignment.assignedAs === 'edas' && '📄 e-DAS'}
+                          {assignment.assignedAs === 'loadingNote' && '📋 Nota di Carico'}
+                          {assignment.assignedAs === 'cartelloCounter' && '📷 Cartellino Conta Litro'}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              )}
-
-              {!trip.edasImageUrl && (
-                <p className="text-gray-500 text-center py-8">
-                  Nessuna immagine e-DAS disponibile
-                </p>
-              )}
-            </div>
-
-            {/* Loading Note Images */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">
-                Documenti Nota di Carico
-              </h3>
-              
-              {trip.loadingNoteImageUrl && (
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-gray-700 mb-2">Documento Originale</h4>
-                  <img
-                    src={trip.loadingNoteImageUrl}
-                    alt="Nota di Carico Originale"
-                    className="w-full h-auto rounded-lg border border-gray-300 shadow-sm"
-                  />
-                </div>
-              )}
-
-              {!trip.loadingNoteImageUrl && (
-                <p className="text-gray-500 text-center py-8">
-                  Nessuna immagine nota di carico disponibile
-                </p>
-              )}
-            </div>
-
-            {/* Cartello Counter Images */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">
-                Cartellino Conta Litro
-              </h3>
-              
-              {trip.cartelloCounterImageUrl && (
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-gray-700 mb-2">Documento Originale</h4>
-                  <img
-                    src={trip.cartelloCounterImageUrl}
-                    alt="Cartellino Conta Litro"
-                    className="w-full h-auto rounded-lg border border-gray-300 shadow-sm"
-                  />
-                </div>
-              )}
-
-              {!trip.cartelloCounterImageUrl && (
-                <p className="text-gray-500 text-center py-8">
-                  Nessuna immagine cartellino conta litro disponibile
-                </p>
-              )}
-            </div>
+              </div>
+            ))}
           </div>
 
           {/* Document Details */}

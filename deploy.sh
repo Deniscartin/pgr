@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Script di deploy per Petrolis WebApp
-# Trasferisce i file aggiornati e riavvia il container Docker
+# Deploy su Hetzner con Docker + Nginx reverse proxy
 
-PROJECT="tidal-glider-465915-e6"
-ZONE="europe-west4-b"
-INSTANCE="webapp"
-REMOTE_DIR="pgr"
+SERVER_IP="37.27.247.232"
+SERVER_USER="root"
+REMOTE_DIR="/opt/petrolis"
+DOMAIN="api.petrolis.it"
 
 echo "📦 Preparazione archivio per il deploy..."
 
@@ -30,23 +30,21 @@ tar czf /tmp/petrolis-deploy.tar.gz \
 
 echo "✅ Archivio creato!"
 echo ""
-echo "📤 Trasferimento archivio al server..."
+echo "📤 Trasferimento archivio al server Hetzner..."
 
-# Trasferisci l'archivio
-gcloud compute scp --zone "$ZONE" --project "$PROJECT" \
-  /tmp/petrolis-deploy.tar.gz \
-  "$INSTANCE:~/"
+# Trasferisci l'archivio via SCP
+scp /tmp/petrolis-deploy.tar.gz ${SERVER_USER}@${SERVER_IP}:/tmp/
 
 echo "✅ Archivio trasferito!"
 echo ""
 echo "📦 Estrazione archivio sul server..."
 
 # Estrai l'archivio sul server
-gcloud compute ssh --zone "$ZONE" "$INSTANCE" --project "$PROJECT" << 'EOFEXTRACT'
-mkdir -p ~/pgr
-cd ~/pgr
-tar xzf ~/petrolis-deploy.tar.gz
-rm ~/petrolis-deploy.tar.gz
+ssh ${SERVER_USER}@${SERVER_IP} << 'EOFEXTRACT'
+mkdir -p /opt/petrolis
+cd /opt/petrolis
+tar xzf /tmp/petrolis-deploy.tar.gz
+rm /tmp/petrolis-deploy.tar.gz
 EOFEXTRACT
 
 # Rimuovi l'archivio locale
@@ -57,16 +55,16 @@ echo ""
 echo "🔧 Ricostruzione e riavvio del container..."
 
 # Esegui i comandi sul server
-gcloud compute ssh --zone "$ZONE" "$INSTANCE" --project "$PROJECT" << 'EOF'
-cd ~/pgr
+ssh ${SERVER_USER}@${SERVER_IP} << 'EOF'
+cd /opt/petrolis
 
 echo "🧹 Pulizia file metadata sul server..."
 find . -type f -name '._*' -delete 2>/dev/null || true
 find . -type f -name '.DS_Store' -delete 2>/dev/null || true
 
 echo "⏹️  Fermando il container esistente..."
-docker stop petrolis-container
-docker rm petrolis-container
+docker stop petrolis-container 2>/dev/null || true
+docker rm petrolis-container 2>/dev/null || true
 
 echo "🏗️  Ricostruendo l'immagine Docker..."
 docker build -t petrolis-webapp .
@@ -74,7 +72,7 @@ docker build -t petrolis-webapp .
 echo "🚀 Avviando il nuovo container..."
 docker run -d \
   --name petrolis-container \
-  -p 3000:3000 \
+  -p 127.0.0.1:3000:3000 \
   --env-file .env.local \
   --restart unless-stopped \
   petrolis-webapp
@@ -85,4 +83,4 @@ docker ps | grep petrolis-container
 EOF
 
 echo "🎉 Deploy completato con successo!"
-
+echo "🌐 Il sito sarà disponibile su https://api.petrolis.it"
