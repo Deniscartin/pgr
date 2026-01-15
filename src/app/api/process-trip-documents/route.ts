@@ -2,7 +2,142 @@ import { NextRequest, NextResponse } from 'next/server';
 import { doc, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ParsedEDASData, ParsedLoadingNoteData, ValidationResult } from '@/lib/types';
-import { parseLoadingNote, parseEdas } from '@/lib/documentParsers';
+// DISABILITATO: import { parseLoadingNote, parseEdas } from '@/lib/documentParsers';
+
+/**
+ * Chiama la nostra API OCR locale per processare un'immagine
+ */
+async function parseWithLocalOCR(imageUrl: string): Promise<ParsedLoadingNoteData | ParsedEDASData | null> {
+  try {
+    console.log('🤖 Chiamata OCR API locale per:', imageUrl.substring(0, 80) + '...');
+    
+    // Scarica l'immagine
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to download image: ${imageResponse.statusText}`);
+    }
+    
+    const imageBlob = await imageResponse.blob();
+    
+    // Prepara FormData per OCR API
+    const formData = new FormData();
+    formData.append('image', imageBlob, 'document.jpg');
+    
+    // URL del server OCR locale
+    const OCR_API_URL = process.env.OCR_API_URL || 'http://77.42.92.255:8000';
+    
+    // Chiama OCR API
+    const ocrResponse = await fetch(`${OCR_API_URL}/api/scan`, {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!ocrResponse.ok) {
+      const errorText = await ocrResponse.text();
+      throw new Error(`OCR API error: ${ocrResponse.status} - ${errorText}`);
+    }
+    
+    const ocrResult = await ocrResponse.json();
+    console.log('✅ OCR Result tipo:', ocrResult.tipo);
+    console.log('📋 OCR Result dati.numero (DAS):', ocrResult.dati?.numero);
+    
+    if (ocrResult.status !== 'ok') {
+      throw new Error(ocrResult.message || 'OCR failed');
+    }
+    
+    const dati = ocrResult.dati;
+    const tipo = ocrResult.tipo; // "DAS" o "NOTA"
+    
+    // Estrai nome azienda da destinazione (rimuovi indirizzo dopo " - ")
+    const extractCompanyName = (destinazione: string): string => {
+      if (!destinazione) return '';
+      const parts = destinazione.split(' - ');
+      return parts[0].trim();
+    };
+    
+    // Per le Note: ignora cliente se è ENIMOOV (fornitore), usa sempre destinazione
+    // Per i DAS: usa cliente se disponibile, altrimenti destinazione
+    let clienteName = '';
+    if (tipo === 'NOTA') {
+      clienteName = extractCompanyName(dati.destinazione || '') || '';
+    } else {
+      clienteName = dati.cliente || extractCompanyName(dati.destinazione || '') || '';
+    }
+    
+    if (tipo === 'DAS') {
+      // Mappa a ParsedEDASData
+      const edasData: ParsedEDASData = {
+        documentInfo: {
+          dasNumber: dati.numero || '',
+          version: '1',
+          localReferenceNumber: '',
+          invoiceNumber: '',
+          invoiceDate: dati.data || '',
+          registrationDateTime: '',
+          shippingDateTime: '',
+          validityExpirationDateTime: '',
+        },
+        senderInfo: {
+          depositoMittenteCode: '',
+          name: dati.deposito || '',
+          address: '',
+        },
+        depositorInfo: {
+          name: dati.deposito || '',
+          id: '',
+        },
+        recipientInfo: {
+          name: clienteName,
+          address: clienteName,
+          taxCode: '',
+        },
+        transportInfo: {
+          transportManager: '',
+          transportMode: '',
+          vehicleType: '',
+          vehicleId: '',
+          estimatedDuration: '',
+          firstCarrierName: '',
+          firstCarrierId: '',
+          driverName: '',
+        },
+        productInfo: {
+          productCode: '',
+          description: dati.prodotto || '',
+          unCode: '',
+          netWeightKg: 0,
+          volumeAtAmbientTempL: dati.quantita_litri || 0,
+          volumeAt15CL: dati.quantita_litri || 0,
+          densityAtAmbientTemp: 0,
+          densityAt15C: 0,
+        },
+      };
+      return edasData;
+    } else {
+      // Mappa a ParsedLoadingNoteData
+      const loadingNoteData: ParsedLoadingNoteData = {
+        // Per Note: usa das_riferimento (DAS) se disponibile, altrimenti numero
+        documentNumber: dati.das_riferimento || dati.numero || '',
+        loadingDate: dati.data || '',
+        carrierName: '',
+        shipperName: tipo === 'NOTA' ? (dati.fornitore || '') : (dati.deposito || ''),
+        consigneeName: clienteName,
+        productDescription: dati.prodotto || '',
+        grossWeightKg: 0,
+        netWeightKg: 0,
+        volumeLiters: dati.quantita_litri || 0,
+        notes: `Tipo: ${tipo}`,
+        depotLocation: dati.deposito || dati.fornitore || '',
+        destinationName: clienteName,
+      };
+      return loadingNoteData;
+    }
+    
+  } catch (error) {
+    console.error('❌ Errore OCR locale:', error);
+    return null;
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,72 +166,28 @@ export async function POST(request: NextRequest) {
     console.log('  - Loading Note:', loadingNoteImageUrl);
     console.log('  - Cartellino:', cartelloCounterImageUrl);
 
-    const downloadImageAsBase64 = async (imageUrl: string): Promise<{ base64: string; mimeType: string }> => {
-      try {
-        // Prova prima con fetch diretto (funziona localmente)
-        const response = await fetch(imageUrl, {
-          method: 'GET',
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; Petrolis/1.0)',
-          },
-        });
-        
-        if (response.ok) {
-          const buffer = await response.arrayBuffer();
-          const base64 = Buffer.from(buffer).toString('base64');
-          const mimeType = response.headers.get('content-type') || 'image/jpeg';
-          return { base64, mimeType };
-        }
-        
-        throw new Error(`Fetch failed: ${response.statusText}`);
-      } catch (fetchError) {
-        console.warn('Direct fetch failed, trying alternative approach:', fetchError);
-        
-        // Approccio alternativo: estrai il path dall'URL e usa Firebase Storage
-        try {
-          const { imageStorage } = await import('@/lib/firebase');
-          const { ref, getDownloadURL, getBytes } = await import('firebase/storage');
-          
-          // Estrai il path del file dall'URL Firebase
-          const url = new URL(imageUrl);
-          const pathMatch = url.pathname.match(/\/o\/(.+?)\?/);
-          
-          if (!pathMatch) {
-            throw new Error('Cannot extract file path from Firebase URL');
-          }
-          
-          const filePath = decodeURIComponent(pathMatch[1]);
-          const fileRef = ref(imageStorage, filePath);
-          
-          const bytes = await getBytes(fileRef);
-          const base64 = Buffer.from(bytes).toString('base64');
-          
-          return { base64, mimeType: 'image/jpeg' };
-        } catch (firebaseError) {
-          console.error('Firebase download also failed:', firebaseError);
-          throw new Error(`Failed to download image: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
-        }
-      }
-    };
-
-    // Step 1: Process e-DAS with OCR
+    // Step 1: Process e-DAS with local OCR
     let edasData: ParsedEDASData | null = null;
     try {
-      console.log('📄 Step 1: Processing e-DAS with Document AI...');
-      const { base64, mimeType } = await downloadImageAsBase64(edasImageUrl);
-      edasData = await parseEdas(base64, mimeType);
-      console.log('✅ e-DAS processed successfully');
+      console.log('📄 Step 1: Processing e-DAS with local OCR API...');
+      const result = await parseWithLocalOCR(edasImageUrl);
+      if (result && 'documentInfo' in result) {
+        edasData = result as ParsedEDASData;
+        console.log('✅ e-DAS processed successfully');
+      }
     } catch (error) {
       console.error('❌ Error processing e-DAS:', error);
     }
 
-    // Step 2: Process Loading Note with OCR
+    // Step 2: Process Loading Note with local OCR
     let loadingNoteData: ParsedLoadingNoteData | null = null;
     try {
-      console.log('📄 Step 2: Processing Loading Note with Document AI...');
-      const { base64, mimeType } = await downloadImageAsBase64(loadingNoteImageUrl);
-      loadingNoteData = await parseLoadingNote(base64, mimeType);
-      console.log('✅ Loading Note processed successfully');
+      console.log('📄 Step 2: Processing Loading Note with local OCR API...');
+      const result = await parseWithLocalOCR(loadingNoteImageUrl);
+      if (result && 'documentNumber' in result) {
+        loadingNoteData = result as ParsedLoadingNoteData;
+        console.log('✅ Loading Note processed successfully');
+      }
     } catch (error) {
       console.error('❌ Error processing Loading Note:', error);
     }
@@ -117,7 +208,7 @@ export async function POST(request: NextRequest) {
         orderUpdateData.orderNumber = loadingNoteData.documentNumber || `TEMP_${Date.now()}`;
         orderUpdateData.product = loadingNoteData.productDescription || 'DA ESTRARRE';
         orderUpdateData.quantity = loadingNoteData.volumeLiters || 0;
-        orderUpdateData.customerName = loadingNoteData.consigneeName || 'DA ESTRARRE';
+        orderUpdateData.customerName = loadingNoteData.destinationName || loadingNoteData.consigneeName || 'DA ESTRARRE';
         orderUpdateData.deliveryAddress = loadingNoteData.destinationName || 'DA ESTRARRE';
       }
 
@@ -127,7 +218,7 @@ export async function POST(request: NextRequest) {
           orderUpdateData.product = edasData.productInfo.description || 'DA ESTRARRE';
         }
         if (!orderUpdateData.quantity || orderUpdateData.quantity === 0) {
-          orderUpdateData.quantity = edasData.productInfo.volumeAt15CL || 0;
+          orderUpdateData.quantity = edasData.productInfo.volumeAtAmbientTempL || 0;
         }
         if (!orderUpdateData.customerName || orderUpdateData.customerName === 'DA ESTRARRE') {
           orderUpdateData.customerName = edasData.recipientInfo.name || 'DA ESTRARRE';
@@ -157,17 +248,13 @@ export async function POST(request: NextRequest) {
       updatedAt: Timestamp.now(),
       status: 'completato',
       completedAt: Timestamp.now(),
-      // Images are already correctly stored (autista uploaded them in the right fields)
       edasImageUrl: edasImageUrl,
       loadingNoteImageUrl: loadingNoteImageUrl,
       cartelloCounterImageUrl: cartelloCounterImageUrl,
-      // Store extracted data
       edasData: edasData,
       loadingNoteData: loadingNoteData,
-      // Store validation results
       validationResults: validationResults.length > 0 ? validationResults : undefined,
-      // Processing metadata
-      processingMode: 'direct', // Autista specified document types
+      processingMode: 'local_ocr',
       processedAt: Timestamp.now()
     };
 
@@ -181,15 +268,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       tripId,
-      processingMode: 'direct',
+      processingMode: 'local_ocr',
       edasProcessed: !!edasData,
       loadingNoteProcessed: !!loadingNoteData,
-      cartelloCounterProcessed: true, // Counter saved as image
+      cartelloCounterProcessed: true,
       validationResults,
       edasData: edasData ? {
         dasNumber: edasData.documentInfo.dasNumber,
         product: edasData.productInfo.description,
-        volume: edasData.productInfo.volumeAt15CL,
+        volume: edasData.productInfo.volumeAtAmbientTempL,
       } : null,
       loadingNoteData: loadingNoteData ? {
         documentNumber: loadingNoteData.documentNumber,
@@ -211,28 +298,14 @@ export async function POST(request: NextRequest) {
 function validateDocuments(edasData: ParsedEDASData, loadingNoteData: ParsedLoadingNoteData): ValidationResult[] {
   const results: ValidationResult[] = [];
 
-  // Validazione del peso netto
-  if (edasData.productInfo.netWeightKg && loadingNoteData.netWeightKg) {
-    const weightDifference = Math.abs(edasData.productInfo.netWeightKg - loadingNoteData.netWeightKg);
-    const weightToleranceKg = 50; // Tolleranza di 50kg
-    
-    results.push({
-      field: 'Peso Netto (kg)',
-      edasValue: edasData.productInfo.netWeightKg,
-      loadingNoteValue: loadingNoteData.netWeightKg,
-      isMatch: weightDifference <= weightToleranceKg,
-      severity: weightDifference <= weightToleranceKg ? 'info' : 'warning'
-    });
-  }
-
   // Validazione del volume
-  if (edasData.productInfo.volumeAt15CL && loadingNoteData.volumeLiters) {
-    const volumeDifference = Math.abs(edasData.productInfo.volumeAt15CL - loadingNoteData.volumeLiters);
+  if (edasData.productInfo.volumeAtAmbientTempL && loadingNoteData.volumeLiters) {
+    const volumeDifference = Math.abs(edasData.productInfo.volumeAtAmbientTempL - loadingNoteData.volumeLiters);
     const volumeToleranceL = 100; // Tolleranza di 100L
     
     results.push({
       field: 'Volume (L)',
-      edasValue: edasData.productInfo.volumeAt15CL,
+      edasValue: edasData.productInfo.volumeAtAmbientTempL,
       loadingNoteValue: loadingNoteData.volumeLiters,
       isMatch: volumeDifference <= volumeToleranceL,
       severity: volumeDifference <= volumeToleranceL ? 'info' : 'warning'

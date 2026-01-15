@@ -402,9 +402,12 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                     />
                     <DetailItem 
                       label="Cliente" 
-                      value={getCurrentValue('loadingNoteData.consigneeName', trip.loadingNoteData?.consigneeName)} 
+                      value={getCurrentValue('loadingNoteData.destinationName', trip.loadingNoteData?.destinationName || trip.loadingNoteData?.consigneeName)} 
                       isEditable 
-                      onEdit={(value) => handleFieldEdit('loadingNoteData.consigneeName', value)} 
+                      onEdit={(value) => {
+                        handleFieldEdit('loadingNoteData.destinationName', value);
+                        handleFieldEdit('loadingNoteData.consigneeName', value);
+                      }} 
                     />
                     {/* <DetailItem 
                       label="Destinazione" 
@@ -425,28 +428,6 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
                       value={getCurrentValue('loadingNoteData.volumeLiters', trip.loadingNoteData?.volumeLiters)} 
                       isEditable 
                       onEdit={(value) => handleFieldEdit('loadingNoteData.volumeLiters', value)} 
-                      type="number"
-                    />
-                    <DetailItem 
-                      label="Densità a 15°" 
-                      value={getCurrentValue('loadingNoteData.densityAt15C', trip.loadingNoteData?.densityAt15C)} 
-                      isEditable 
-                      onEdit={(value) => handleFieldEdit('loadingNoteData.densityAt15C', value)} 
-                      type="number"
-                    />
-                    <DetailItem 
-                      label="Densità Ambiente" 
-                      value={getCurrentValue('loadingNoteData.densityAtAmbientTemp', trip.loadingNoteData?.densityAtAmbientTemp) || 
-                             getCurrentValue('edasData.productInfo.densityAtAmbientTemp', trip.edasData?.productInfo?.densityAtAmbientTemp)} 
-                      isEditable 
-                      onEdit={(value) => handleFieldEdit('loadingNoteData.densityAtAmbientTemp', value)} 
-                      type="number"
-                    />
-                    <DetailItem 
-                      label="Quantità in KG" 
-                      value={getCurrentValue('loadingNoteData.netWeightKg', trip.loadingNoteData?.netWeightKg)} 
-                      isEditable 
-                      onEdit={(value) => handleFieldEdit('loadingNoteData.netWeightKg', value)} 
                       type="number"
                     />
                     <DetailItem 
