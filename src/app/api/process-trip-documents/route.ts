@@ -143,9 +143,10 @@ export async function POST(request: NextRequest) {
   try {
     const { tripId, orderId, driverId, edasImageUrl, loadingNoteImageUrl, cartelloCounterImageUrl } = await request.json();
 
-    if (!tripId || !orderId || !driverId || !edasImageUrl || !loadingNoteImageUrl || !cartelloCounterImageUrl) {
+    // edasImageUrl è opzionale (può mancare se ci sono 2 note)
+    if (!tripId || !orderId || !driverId || !loadingNoteImageUrl || !cartelloCounterImageUrl) {
       return NextResponse.json(
-        { error: 'Trip ID, Order ID, Driver ID e URLs delle immagini sono richiesti' },
+        { error: 'Trip ID, Order ID, Driver ID, Loading Note URL e Cartellino URL sono richiesti. DAS URL è opzionale.' },
         { status: 400 }
       );
     }
@@ -166,17 +167,27 @@ export async function POST(request: NextRequest) {
     console.log('  - Loading Note:', loadingNoteImageUrl);
     console.log('  - Cartellino:', cartelloCounterImageUrl);
 
-    // Step 1: Process e-DAS with local OCR
+    // Step 1: Process e-DAS with local OCR (se disponibile)
     let edasData: ParsedEDASData | null = null;
-    try {
-      console.log('📄 Step 1: Processing e-DAS with local OCR API...');
-      const result = await parseWithLocalOCR(edasImageUrl);
-      if (result && 'documentInfo' in result) {
-        edasData = result as ParsedEDASData;
-        console.log('✅ e-DAS processed successfully');
+    let edasIsActuallyNote = false;
+    if (edasImageUrl) {
+      try {
+        console.log('📄 Step 1: Processing e-DAS with local OCR API...');
+        const result = await parseWithLocalOCR(edasImageUrl);
+        if (result && 'documentInfo' in result) {
+          edasData = result as ParsedEDASData;
+          console.log('✅ e-DAS processed successfully');
+        } else if (result && 'documentNumber' in result) {
+          // L'immagine DAS è in realtà una Nota
+          console.log('⚠️ L\'immagine DAS è in realtà una Nota di Consegna');
+          edasIsActuallyNote = true;
+        }
+      } catch (error) {
+        console.error('❌ Error processing e-DAS:', error);
+        console.log('⚠️ DAS non disponibile o errore nel processamento');
       }
-    } catch (error) {
-      console.error('❌ Error processing e-DAS:', error);
+    } else {
+      console.log('ℹ️ Step 1: DAS non fornito (opzionale)');
     }
 
     // Step 2: Process Loading Note with local OCR
@@ -192,6 +203,60 @@ export async function POST(request: NextRequest) {
       console.error('❌ Error processing Loading Note:', error);
     }
 
+    // Step 2.5: Fallback - Se manca il DAS, crea edasData dai dati della Loading Note
+    let isFallbackMode = false;
+    if (!edasData && loadingNoteData) {
+      console.log('🔄 Fallback: Creazione e-DAS dai dati della Loading Note...');
+      isFallbackMode = true;
+      edasData = {
+        documentInfo: {
+          dasNumber: loadingNoteData.documentNumber || '', // Usa il DAS dalla nota se disponibile
+          version: '1',
+          localReferenceNumber: '',
+          invoiceNumber: '',
+          invoiceDate: loadingNoteData.loadingDate || '',
+          registrationDateTime: '',
+          shippingDateTime: '',
+          validityExpirationDateTime: '',
+        },
+        senderInfo: {
+          depositoMittenteCode: '',
+          name: loadingNoteData.shipperName || loadingNoteData.depotLocation || '',
+          address: '',
+        },
+        depositorInfo: {
+          name: loadingNoteData.shipperName || loadingNoteData.depotLocation || '',
+          id: '',
+        },
+        recipientInfo: {
+          name: loadingNoteData.destinationName || loadingNoteData.consigneeName || '',
+          address: loadingNoteData.destinationName || loadingNoteData.consigneeName || '',
+          taxCode: '',
+        },
+        transportInfo: {
+          transportManager: '',
+          transportMode: '',
+          vehicleType: '',
+          vehicleId: '',
+          estimatedDuration: '',
+          firstCarrierName: loadingNoteData.carrierName || '',
+          firstCarrierId: '',
+          driverName: '',
+        },
+        productInfo: {
+          productCode: '',
+          description: loadingNoteData.productDescription || '',
+          unCode: '',
+          netWeightKg: 0,
+          volumeAtAmbientTempL: loadingNoteData.volumeLiters || 0,
+          volumeAt15CL: loadingNoteData.volumeLiters || 0,
+          densityAtAmbientTemp: 0,
+          densityAt15C: 0,
+        },
+      };
+      console.log('✅ e-DAS creato dai dati della Loading Note (fallback)');
+    }
+
     // Step 3: Cartellino Counter - saved as image only (no OCR)
     console.log('📸 Step 3: Cartellino Counter saved as image (no OCR processing)');
 
@@ -203,7 +268,7 @@ export async function POST(request: NextRequest) {
         updatedAt: Timestamp.now()
       };
 
-      // Use Loading Note data as primary source
+      // Use Loading Note data as primary source (sempre priorità)
       if (loadingNoteData) {
         orderUpdateData.orderNumber = loadingNoteData.documentNumber || `TEMP_${Date.now()}`;
         orderUpdateData.product = loadingNoteData.productDescription || 'DA ESTRARRE';
@@ -212,8 +277,10 @@ export async function POST(request: NextRequest) {
         orderUpdateData.deliveryAddress = loadingNoteData.destinationName || 'DA ESTRARRE';
       }
 
-      // Use e-DAS data as fallback or to fill missing fields
-      if (edasData) {
+      // Use e-DAS data as fallback ONLY if Loading Note data is missing
+      // (Non sovrascrivere i dati della Loading Note che hanno sempre priorità)
+      if (edasData && !loadingNoteData) {
+        // Solo se manca completamente la Loading Note, usa i dati del DAS
         if (!orderUpdateData.product || orderUpdateData.product === 'DA ESTRARRE') {
           orderUpdateData.product = edasData.productInfo.description || 'DA ESTRARRE';
         }
@@ -234,12 +301,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 5: Cross-validation between e-DAS and Loading Note
+    // Skip validation if DAS was created from Loading Note (fallback mode)
     const validationResults: ValidationResult[] = [];
-    if (edasData && loadingNoteData) {
+    
+    if (edasData && loadingNoteData && !isFallbackMode) {
       console.log('🔍 Step 5: Cross-validating e-DAS and Loading Note data...');
       const crossValidation = validateDocuments(edasData, loadingNoteData);
       validationResults.push(...crossValidation);
       console.log('✅ Validation completed:', validationResults);
+    } else if (isFallbackMode) {
+      console.log('ℹ️ Step 5: Skipping validation (DAS creato da Loading Note in modalità fallback)');
     }
 
     // Step 6: Update trip with processed data
@@ -248,13 +319,13 @@ export async function POST(request: NextRequest) {
       updatedAt: Timestamp.now(),
       status: 'completato',
       completedAt: Timestamp.now(),
-      edasImageUrl: edasImageUrl,
+      edasImageUrl: edasImageUrl || null,
       loadingNoteImageUrl: loadingNoteImageUrl,
       cartelloCounterImageUrl: cartelloCounterImageUrl,
       edasData: edasData,
       loadingNoteData: loadingNoteData,
       validationResults: validationResults.length > 0 ? validationResults : undefined,
-      processingMode: 'local_ocr',
+      processingMode: isFallbackMode ? 'local_ocr_fallback' : 'local_ocr',
       processedAt: Timestamp.now()
     };
 
@@ -268,9 +339,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       tripId,
-      processingMode: 'local_ocr',
+      processingMode: isFallbackMode ? 'local_ocr_fallback' : 'local_ocr',
       edasProcessed: !!edasData,
       loadingNoteProcessed: !!loadingNoteData,
+      edasFromFallback: isFallbackMode,
       cartelloCounterProcessed: true,
       validationResults,
       edasData: edasData ? {
