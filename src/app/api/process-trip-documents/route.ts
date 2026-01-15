@@ -324,10 +324,14 @@ export async function POST(request: NextRequest) {
       cartelloCounterImageUrl: cartelloCounterImageUrl,
       edasData: edasData,
       loadingNoteData: loadingNoteData,
-      validationResults: validationResults.length > 0 ? validationResults : undefined,
       processingMode: isFallbackMode ? 'local_ocr_fallback' : 'local_ocr',
       processedAt: Timestamp.now()
     };
+
+    // Aggiungi validationResults solo se non è vuoto (Firestore non accetta undefined)
+    if (validationResults.length > 0) {
+      updateData.validationResults = validationResults;
+    }
 
     await updateDoc(tripRef, updateData);
 
