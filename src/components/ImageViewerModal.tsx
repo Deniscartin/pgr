@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Trip } from '../lib/types/index';
 import jsPDF from 'jspdf';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Upload, Camera } from 'lucide-react';
+import { uploadImageToCloud } from '@/lib/imageProcessing';
 
 interface ImageViewerModalProps {
   trip: Trip;
@@ -21,6 +22,9 @@ interface ImageAssignment {
 export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerModalProps) {
   const [loading, setLoading] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
+  const [isUploadingCartellino, setIsUploadingCartellino] = useState(false);
+  const [cartelloUploadMessage, setCartelloUploadMessage] = useState('');
+  const cartelloFileInputRef = useRef<HTMLInputElement>(null);
   
   // Initialize image assignments
   const [imageAssignments, setImageAssignments] = useState<ImageAssignment[]>(() => {
@@ -40,6 +44,55 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
   const [hasChanges, setHasChanges] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleCartelloReupload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingCartellino(true);
+    setCartelloUploadMessage('Caricamento in corso...');
+
+    try {
+      // Upload to Firebase Storage
+      console.log('📤 Caricamento nuovo cartellino...');
+      const cloudUrl = await uploadImageToCloud(file, false);
+      console.log('✅ Cartellino caricato:', cloudUrl);
+
+      // Update Firestore trip document
+      const tripRef = doc(db, 'trips', trip.id);
+      await updateDoc(tripRef, {
+        cartelloCounterImageUrl: cloudUrl,
+        updatedAt: Timestamp.now(),
+      });
+
+      console.log('✅ Trip aggiornato con nuovo cartellino');
+
+      // Update local state
+      const cartelloIndex = imageAssignments.findIndex(a => a.assignedAs === 'cartelloCounter');
+      if (cartelloIndex !== -1) {
+        const newAssignments = [...imageAssignments];
+        newAssignments[cartelloIndex].url = cloudUrl;
+        setImageAssignments(newAssignments);
+      } else {
+        // If there was no cartellino before, add it
+        setImageAssignments(prev => [...prev, { url: cloudUrl, assignedAs: 'cartelloCounter' }]);
+      }
+
+      setCartelloUploadMessage('✅ Cartellino ricaricato con successo!');
+      setTimeout(() => setCartelloUploadMessage(''), 4000);
+
+    } catch (error) {
+      console.error('❌ Errore caricamento cartellino:', error);
+      setCartelloUploadMessage(`❌ Errore: ${error instanceof Error ? error.message : 'Caricamento fallito'}`);
+      setTimeout(() => setCartelloUploadMessage(''), 5000);
+    } finally {
+      setIsUploadingCartellino(false);
+      // Reset file input
+      if (cartelloFileInputRef.current) {
+        cartelloFileInputRef.current.value = '';
+      }
+    }
+  };
 
   const handleAssignmentChange = (index: number, newType: DocumentType) => {
     const newAssignments = [...imageAssignments];
@@ -459,6 +512,56 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
               Se l'autista ha caricato i documenti nei campi sbagliati, puoi riassegnarli qui.
               Seleziona il tipo corretto per ogni immagine e clicca "Salva e Riesegui Scansione".
             </p>
+          </div>
+
+          {/* Ricarica Cartellino Section */}
+          <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <Camera className="w-5 h-5 text-orange-600" />
+                <div>
+                  <h3 className="text-sm font-semibold text-orange-900">
+                    Ricarica Cartellino Conta Litro
+                  </h3>
+                  <p className="text-xs text-orange-700">
+                    Seleziona una nuova foto per sostituire il cartellino attuale
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  ref={cartelloFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleCartelloReupload}
+                  className="hidden"
+                  id="cartello-reupload"
+                />
+                <button
+                  onClick={() => cartelloFileInputRef.current?.click()}
+                  disabled={isUploadingCartellino}
+                  className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors gap-2"
+                >
+                  {isUploadingCartellino ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Caricamento...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      Ricarica Cartellino
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+            {cartelloUploadMessage && (
+              <div className={`mt-3 text-sm font-medium ${cartelloUploadMessage.startsWith('✅') ? 'text-green-700' : cartelloUploadMessage.startsWith('❌') ? 'text-red-700' : 'text-orange-700'}`}>
+                {cartelloUploadMessage}
+              </div>
+            )}
           </div>
 
           {/* Image Assignments */}
