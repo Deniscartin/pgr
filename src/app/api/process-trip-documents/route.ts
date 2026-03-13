@@ -2,140 +2,54 @@ import { NextRequest, NextResponse } from 'next/server';
 import { doc, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ParsedEDASData, ParsedLoadingNoteData, ValidationResult } from '@/lib/types';
-// DISABILITATO: import { parseLoadingNote, parseEdas } from '@/lib/documentParsers';
+import { parseLoadingNote, parseEdas } from '@/lib/documentParsers';
 
 /**
- * Chiama la nostra API OCR locale per processare un'immagine
+ * Scarica un'immagine da URL e la converte in base64 per Google Document AI
  */
-async function parseWithLocalOCR(imageUrl: string): Promise<ParsedLoadingNoteData | ParsedEDASData | null> {
+async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
   try {
-    console.log('🤖 Chiamata OCR API locale per:', imageUrl.substring(0, 80) + '...');
-    
-    // Scarica l'immagine
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      throw new Error(`Failed to download image: ${imageResponse.statusText}`);
-    }
-    
-    const imageBlob = await imageResponse.blob();
-    
-    // Prepara FormData per OCR API
-    const formData = new FormData();
-    formData.append('image', imageBlob, 'document.jpg');
-    
-    // URL del server OCR locale
-    const OCR_API_URL = process.env.OCR_API_URL || 'http://77.42.92.255:8000';
-    
-    // Chiama OCR API
-    const ocrResponse = await fetch(`${OCR_API_URL}/api/scan`, {
-      method: 'POST',
-      body: formData,
+    const response = await fetch(imageUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Petrolis/1.0)',
+      },
     });
     
-    if (!ocrResponse.ok) {
-      const errorText = await ocrResponse.text();
-      throw new Error(`OCR API error: ${ocrResponse.status} - ${errorText}`);
+    if (response.ok) {
+      const buffer = await response.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString('base64');
+      const mimeType = response.headers.get('content-type') || 'image/jpeg';
+      return { base64, mimeType };
     }
     
-    const ocrResult = await ocrResponse.json();
-    console.log('✅ OCR Result tipo:', ocrResult.tipo);
-    console.log('📋 OCR Result dati.numero (DAS):', ocrResult.dati?.numero);
+    throw new Error(`Fetch failed: ${response.statusText}`);
+  } catch (fetchError) {
+    console.warn('Direct fetch failed, trying Firebase Storage approach:', fetchError);
     
-    if (ocrResult.status !== 'ok') {
-      throw new Error(ocrResult.message || 'OCR failed');
+    // Approccio alternativo: estrai il path dall'URL e usa Firebase Storage
+    try {
+      const { imageStorage } = await import('@/lib/firebase');
+      const { ref, getBytes } = await import('firebase/storage');
+      
+      const url = new URL(imageUrl);
+      const pathMatch = url.pathname.match(/\/o\/(.+?)\?/);
+      
+      if (!pathMatch) {
+        throw new Error('Cannot extract file path from Firebase URL');
+      }
+      
+      const filePath = decodeURIComponent(pathMatch[1]);
+      const fileRef = ref(imageStorage, filePath);
+      
+      const bytes = await getBytes(fileRef);
+      const base64 = Buffer.from(bytes).toString('base64');
+      
+      return { base64, mimeType: 'image/jpeg' };
+    } catch (firebaseError) {
+      console.error('Firebase download also failed:', firebaseError);
+      throw new Error(`Failed to download image: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
     }
-    
-    const dati = ocrResult.dati;
-    const tipo = ocrResult.tipo; // "DAS" o "NOTA"
-    
-    // Estrai nome azienda da destinazione (rimuovi indirizzo dopo " - ")
-    const extractCompanyName = (destinazione: string): string => {
-      if (!destinazione) return '';
-      const parts = destinazione.split(' - ');
-      return parts[0].trim();
-    };
-    
-    // Per le Note: ignora cliente se è ENIMOOV (fornitore), usa sempre destinazione
-    // Per i DAS: usa cliente se disponibile, altrimenti destinazione
-    let clienteName = '';
-    if (tipo === 'NOTA') {
-      clienteName = extractCompanyName(dati.destinazione || '') || '';
-    } else {
-      clienteName = dati.cliente || extractCompanyName(dati.destinazione || '') || '';
-    }
-    
-    if (tipo === 'DAS') {
-      // Mappa a ParsedEDASData
-      const edasData: ParsedEDASData = {
-        documentInfo: {
-          dasNumber: dati.numero || '',
-          version: '1',
-          localReferenceNumber: '',
-          invoiceNumber: '',
-          invoiceDate: dati.data || '',
-          registrationDateTime: '',
-          shippingDateTime: '',
-          validityExpirationDateTime: '',
-        },
-        senderInfo: {
-          depositoMittenteCode: '',
-          name: dati.deposito || '',
-          address: '',
-        },
-        depositorInfo: {
-          name: dati.deposito || '',
-          id: '',
-        },
-        recipientInfo: {
-          name: clienteName,
-          address: clienteName,
-          taxCode: '',
-        },
-        transportInfo: {
-          transportManager: '',
-          transportMode: '',
-          vehicleType: '',
-          vehicleId: '',
-          estimatedDuration: '',
-          firstCarrierName: '',
-          firstCarrierId: '',
-          driverName: '',
-        },
-        productInfo: {
-          productCode: '',
-          description: dati.prodotto || '',
-          unCode: '',
-          netWeightKg: 0,
-          volumeAtAmbientTempL: dati.quantita_litri || 0,
-          volumeAt15CL: dati.quantita_litri || 0,
-          densityAtAmbientTemp: 0,
-          densityAt15C: 0,
-        },
-      };
-      return edasData;
-    } else {
-      // Mappa a ParsedLoadingNoteData
-      const loadingNoteData: ParsedLoadingNoteData = {
-        // Per Note: usa das_riferimento (DAS) se disponibile, altrimenti numero
-        documentNumber: dati.das_riferimento || dati.numero || '',
-        loadingDate: dati.data || '',
-        carrierName: '',
-        shipperName: tipo === 'NOTA' ? (dati.fornitore || '') : (dati.deposito || ''),
-        consigneeName: clienteName,
-        productDescription: dati.prodotto || '',
-        grossWeightKg: 0,
-        netWeightKg: 0,
-        volumeLiters: dati.quantita_litri || 0,
-        notes: `Tipo: ${tipo}`,
-        depotLocation: dati.deposito || dati.fornitore || '',
-        destinationName: clienteName,
-      };
-      return loadingNoteData;
-    }
-    
-  } catch (error) {
-    console.error('❌ Errore OCR locale:', error);
-    return null;
   }
 }
 
@@ -161,27 +75,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`🚀 Inizio processamento documenti per trip ${tripId}`);
+    console.log(`🚀 Inizio processamento documenti per trip ${tripId} con Google Document AI`);
     console.log('📋 L\'autista ha già caricato i documenti nei campi corretti!');
     console.log('  - e-DAS:', edasImageUrl);
     console.log('  - Loading Note:', loadingNoteImageUrl);
     console.log('  - Cartellino:', cartelloCounterImageUrl);
 
-    // Step 1: Process e-DAS with local OCR (se disponibile)
+    // Step 1: Process e-DAS con Google Document AI (se disponibile)
     let edasData: ParsedEDASData | null = null;
-    let edasIsActuallyNote = false;
     if (edasImageUrl) {
       try {
-        console.log('📄 Step 1: Processing e-DAS with local OCR API...');
-        const result = await parseWithLocalOCR(edasImageUrl);
-        if (result && 'documentInfo' in result) {
-          edasData = result as ParsedEDASData;
-          console.log('✅ e-DAS processed successfully');
-        } else if (result && 'documentNumber' in result) {
-          // L'immagine DAS è in realtà una Nota
-          console.log('⚠️ L\'immagine DAS è in realtà una Nota di Consegna');
-          edasIsActuallyNote = true;
-        }
+        console.log('📄 Step 1: Processing e-DAS con Google Document AI...');
+        const { base64, mimeType } = await downloadImageAsBase64(edasImageUrl);
+        edasData = await parseEdas(base64, mimeType);
+        console.log('✅ e-DAS processed successfully con Google Document AI');
       } catch (error) {
         console.error('❌ Error processing e-DAS:', error);
         console.log('⚠️ DAS non disponibile o errore nel processamento');
@@ -190,15 +97,13 @@ export async function POST(request: NextRequest) {
       console.log('ℹ️ Step 1: DAS non fornito (opzionale)');
     }
 
-    // Step 2: Process Loading Note with local OCR
+    // Step 2: Process Loading Note con Google Document AI
     let loadingNoteData: ParsedLoadingNoteData | null = null;
     try {
-      console.log('📄 Step 2: Processing Loading Note with local OCR API...');
-      const result = await parseWithLocalOCR(loadingNoteImageUrl);
-      if (result && 'documentNumber' in result) {
-        loadingNoteData = result as ParsedLoadingNoteData;
-        console.log('✅ Loading Note processed successfully');
-      }
+      console.log('📄 Step 2: Processing Loading Note con Google Document AI...');
+      const { base64, mimeType } = await downloadImageAsBase64(loadingNoteImageUrl);
+      loadingNoteData = await parseLoadingNote(base64, mimeType);
+      console.log('✅ Loading Note processed successfully con Google Document AI');
     } catch (error) {
       console.error('❌ Error processing Loading Note:', error);
     }
@@ -292,7 +197,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      orderUpdateData.notes = `Ordine aggiornato da documenti processati`;
+      orderUpdateData.notes = `Ordine aggiornato da documenti processati con Google Document AI`;
       
       await updateDoc(orderRef, orderUpdateData);
       console.log('✅ Order updated successfully');
@@ -324,7 +229,7 @@ export async function POST(request: NextRequest) {
       cartelloCounterImageUrl: cartelloCounterImageUrl,
       edasData: edasData,
       loadingNoteData: loadingNoteData,
-      processingMode: isFallbackMode ? 'local_ocr_fallback' : 'local_ocr',
+      processingMode: isFallbackMode ? 'google_docai_fallback' : 'google_docai',
       processedAt: Timestamp.now()
     };
 
@@ -335,7 +240,7 @@ export async function POST(request: NextRequest) {
 
     await updateDoc(tripRef, updateData);
 
-    console.log(`🎉 Processamento completato per trip ${tripId}`);
+    console.log(`🎉 Processamento completato per trip ${tripId} con Google Document AI`);
     console.log(`  - e-DAS processed: ${!!edasData}`);
     console.log(`  - Loading Note processed: ${!!loadingNoteData}`);
     console.log(`  - Validation results: ${validationResults.length}`);
@@ -343,7 +248,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       tripId,
-      processingMode: isFallbackMode ? 'local_ocr_fallback' : 'local_ocr',
+      processingMode: isFallbackMode ? 'google_docai_fallback' : 'google_docai',
       edasProcessed: !!edasData,
       loadingNoteProcessed: !!loadingNoteData,
       edasFromFallback: isFallbackMode,
