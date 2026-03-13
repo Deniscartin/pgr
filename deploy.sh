@@ -26,6 +26,7 @@ tar czf /tmp/petrolis-deploy.tar.gz \
   --exclude='.DS_Store' \
   --exclude='._*' \
   --exclude='deploy.sh' \
+  --exclude='package-lock.json' \
   .
 
 echo "✅ Archivio creato!"
