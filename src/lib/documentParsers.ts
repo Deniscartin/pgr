@@ -1,14 +1,47 @@
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { ParsedLoadingNoteData, ParsedEDASData } from '@/lib/types';
 import path from 'path';
+import fs from 'fs';
 
-// Path to service account key file (best practice per sicurezza)
-const serviceAccountKeyPath = path.join(process.cwd(), 'public', 'tidal-glider-465915-e6-bd6629717062.json');
+// Load service account credentials directly as object (works reliably in Docker standalone)
+function loadCredentials(): { client_email: string; private_key: string } | null {
+  // Try multiple possible paths for the credentials file
+  const possiblePaths = [
+    path.join(process.cwd(), 'public', 'tidal-glider-465915-e6-bd6629717062.json'),
+    path.join(process.cwd(), '..', 'public', 'tidal-glider-465915-e6-bd6629717062.json'),
+    '/app/public/tidal-glider-465915-e6-bd6629717062.json',
+  ];
 
-// Initialize Google Cloud Document AI client with EU endpoint and key file
+  for (const filePath of possiblePaths) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const parsed = JSON.parse(content);
+        console.log(`✅ Credenziali Document AI caricate da: ${filePath}`);
+        return parsed;
+      }
+    } catch (e) {
+      console.warn(`⚠️ Impossibile leggere credenziali da ${filePath}:`, e);
+    }
+  }
+
+  console.error('❌ File credenziali Document AI non trovato in nessun percorso!');
+  console.error('Percorsi tentati:', possiblePaths);
+  console.error('process.cwd():', process.cwd());
+  return null;
+}
+
+const credentials = loadCredentials();
+
+// Initialize Google Cloud Document AI client with EU endpoint and credentials object
 const documentAIClient = new DocumentProcessorServiceClient({
   apiEndpoint: 'eu-documentai.googleapis.com',
-  keyFilename: serviceAccountKeyPath
+  ...(credentials ? {
+    credentials: {
+      client_email: credentials.client_email,
+      private_key: credentials.private_key,
+    }
+  } : {})
 });
 
 /**
