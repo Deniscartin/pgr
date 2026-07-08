@@ -16,18 +16,18 @@ import {
 import { db } from '@/lib/firebase';
 import { Order, Trip, User, InvoiceData, PriceCheck } from '@/lib/types';
 
-// Numero massimo di documenti caricati di default dalle liste in tempo reale.
-// Evita di scaricare intere collezioni all'avvio: il caricamento iniziale
-// resta veloce anche quando il database cresce. Le viste caricano i piu recenti.
-export const DEFAULT_QUERY_LIMIT = 500;
-
-// Hook per gestire gli ordini
-export function useOrders(maxResults: number = DEFAULT_QUERY_LIMIT) {
+// Hook per gestire gli ordini.
+// maxResults e opzionale: se omesso carica TUTTA la collezione (necessario per
+// l'admin che deve vedere l'intero database). Le viste che non hanno bisogno di
+// tutto possono passare un limite per velocizzare il caricamento.
+export function useOrders(maxResults?: number) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(maxResults));
+    const q = maxResults
+      ? query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(maxResults))
+      : query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const ordersData = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -140,17 +140,18 @@ export function useOrdersByIds(orderIds: string[]) {
   return { orders, loading };
 }
 
-// Hook per gestire i viaggi
-export function useTrips(driverId?: string, maxResults: number = DEFAULT_QUERY_LIMIT) {
+// Hook per gestire i viaggi.
+// maxResults e opzionale: se omesso carica tutti i viaggi (necessario per l'admin).
+export function useTrips(driverId?: string, maxResults?: number) {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let q = query(collection(db, 'trips'), orderBy('createdAt', 'desc'), limit(maxResults));
+    const base = [orderBy('createdAt', 'desc'), ...(maxResults ? [limit(maxResults)] : [])];
 
-    if (driverId) {
-      q = query(collection(db, 'trips'), where('driverId', '==', driverId), orderBy('createdAt', 'desc'), limit(maxResults));
-    }
+    const q = driverId
+      ? query(collection(db, 'trips'), where('driverId', '==', driverId), ...base)
+      : query(collection(db, 'trips'), ...base);
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const tripsData = snapshot.docs.map(doc => ({
