@@ -13,11 +13,11 @@ const VALID_COMPANIES = [
 /**
  * Checks if a company name contains any of the valid company names
  * @param companyName - The company name from document extraction
- * @returns The display name: original company name if valid, 'DIRETTA' otherwise
+ * @returns The display name: original company name if valid, 'ENI' otherwise
  */
 export function getDisplayCompanyName(companyName: string | undefined | null): string {
   if (!companyName) {
-    return 'DIRETTA';
+    return 'ENI';
   }
 
   const lowerCompanyName = companyName.toLowerCase();
@@ -26,7 +26,7 @@ export function getDisplayCompanyName(companyName: string | undefined | null): s
     lowerCompanyName.includes(validCompany.toLowerCase())
   );
 
-  return hasValidCompany ? companyName : 'DIRETTA';
+  return hasValidCompany ? companyName : 'ENI';
 }
 
 /**

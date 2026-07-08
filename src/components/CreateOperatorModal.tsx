@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCarriers } from '@/hooks/useFirestore';
 import { X, User, Plus, Trash2 } from 'lucide-react';
 
 interface CreateOperatorModalProps {
@@ -10,6 +11,7 @@ interface CreateOperatorModalProps {
 
 export default function CreateOperatorModal({ onClose }: CreateOperatorModalProps) {
   const { createUserAsAdmin } = useAuth();
+  const { carriers: availableCarriers, loading: carriersLoading } = useCarriers();
   
   const [formData, setFormData] = useState({
     name: '',
@@ -22,7 +24,7 @@ export default function CreateOperatorModal({ onClose }: CreateOperatorModalProp
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -87,7 +89,7 @@ export default function CreateOperatorModal({ onClose }: CreateOperatorModalProp
   };
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm overflow-y-auto h-full w-full z-50">
       <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 lg:w-1/3 shadow-lg rounded-md bg-white">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-medium text-gray-900">
@@ -181,34 +183,50 @@ export default function CreateOperatorModal({ onClose }: CreateOperatorModalProp
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Vettori
             </label>
-            {carriers.map((carrier, index) => (
-              <div key={index} className="flex items-center gap-2 mb-2">
-                <input
-                  type="text"
-                  className="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  placeholder="Nome vettore"
-                  value={carrier}
-                  onChange={(e) => updateCarrier(index, e.target.value)}
-                />
-                {carriers.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeCarrier(index)}
-                    className="p-2 text-red-600 hover:text-red-800"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={addCarrier}
-              className="flex items-center text-sm text-indigo-600 hover:text-indigo-800"
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              Aggiungi vettore
-            </button>
+            {carriersLoading ? (
+              <p className="text-sm text-gray-500">Caricamento vettori...</p>
+            ) : (
+              <>
+                {carriers.map((carrier, index) => (
+                  <div key={index} className="flex items-center gap-2 mb-2">
+                    <select
+                      className="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      value={carrier}
+                      onChange={(e) => updateCarrier(index, e.target.value)}
+                    >
+                      <option value="">Seleziona un vettore</option>
+                      {availableCarriers.map((availableCarrier) => (
+                        <option 
+                          key={availableCarrier} 
+                          value={availableCarrier}
+                          disabled={carriers.includes(availableCarrier) && carrier !== availableCarrier}
+                        >
+                          {availableCarrier}
+                        </option>
+                      ))}
+                    </select>
+                    {carriers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeCarrier(index)}
+                        className="p-2 text-red-600 hover:text-red-800"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addCarrier}
+                  className="flex items-center text-sm text-indigo-600 hover:text-indigo-800"
+                  disabled={carriers.length >= availableCarriers.length}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Aggiungi vettore
+                </button>
+              </>
+            )}
           </div>
 
           <div className="flex justify-end space-x-3 pt-4">

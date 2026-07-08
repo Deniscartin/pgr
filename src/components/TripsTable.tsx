@@ -1,8 +1,11 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Trip, Order, User } from '@/lib/types';
 import { Search, ChevronLeft, ChevronRight, Filter, Calendar, User as UserIcon, FileText, Trash2, Truck } from 'lucide-react';
+import { getDisplayCompanyName } from '@/lib/companyUtils';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface TripsTableProps {
   trips: Trip[];
@@ -12,16 +15,62 @@ interface TripsTableProps {
   onDeleteTrip?: (trip: Trip) => void;
 }
 
+interface LoadingBase {
+  code: string;
+  name: string;
+  fullName?: string;
+}
+
 export default function TripsTable({ trips, orders, drivers, onViewDetails, onDeleteTrip }: TripsTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [carrierFilter, setCarrierFilter] = useState('all');
   const [driverFilter, setDriverFilter] = useState('all');
+  const [baseFilter, setBaseFilter] = useState('all');
   const [dateFromFilter, setDateFromFilter] = useState('');
   const [dateToFilter, setDateToFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [loadingBases, setLoadingBases] = useState<LoadingBase[]>([]);
 
+  // Load loading bases from Firestore
+  useEffect(() => {
+    const fetchBases = async () => {
+      try {
+        const docRef = doc(db, 'settings', 'loadingBases');
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setLoadingBases(data.bases || []);
+        }
+      } catch (error) {
+        console.error('Error fetching loading bases:', error);
+      }
+    };
+    
+    fetchBases();
+  }, []);
 
+  // Extract base name from DAS number, with fallback to DAS number
+  const getBaseDisplayName = (dasNumber: string | undefined): string => {
+    if (!dasNumber) return 'N/A';
+    
+    const upperDAS = dasNumber.toUpperCase();
+    
+    // Search for two consecutive letters that match valid bases
+    for (let i = 0; i < upperDAS.length - 1; i++) {
+      const twoLetters = upperDAS.substring(i, i + 2);
+      const base = loadingBases.find(b => b.code === twoLetters);
+      
+      if (base) {
+        // Return the name in uppercase (LATINA instead of Latina)
+        return base.name.toUpperCase();
+      }
+    }
+    
+    // Fallback: return the DAS number if no base code found
+    return dasNumber;
+  };
   
   // Get unique drivers for filter using database driver names only
   const uniqueDrivers = useMemo(() => {
@@ -50,6 +99,12 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
     return Array.from(carrierSet).sort();
   }, [trips, drivers]);
 
+  // Get unique bases for filter - only from configured bases in DB
+  const uniqueBases = useMemo(() => {
+    // Return only bases that are actually configured in Firestore
+    return loadingBases.map(base => base.name.toUpperCase()).sort();
+  }, [loadingBases]);
+
   const filteredAndSortedTrips = useMemo(() => {
     let filtered = trips;
 
@@ -67,6 +122,15 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
       filtered = filtered.filter(trip => {
         const driver = drivers.find(d => d.id === trip.driverId);
         return driver?.name === driverFilter;
+      });
+    }
+
+    // Base filter
+    if (baseFilter !== 'all') {
+      filtered = filtered.filter(trip => {
+        const dasNumber = trip.edasData?.documentInfo?.dasNumber || trip.loadingNoteData?.documentNumber;
+        const baseName = getBaseDisplayName(dasNumber);
+        return baseName === baseFilter;
       });
     }
 
@@ -108,7 +172,7 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
       const dateB = b.createdAt ? (b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt as any).getTime()) : 0;
       return dateB - dateA;
     });
-  }, [trips, orders, drivers, searchTerm, carrierFilter, driverFilter, dateFromFilter, dateToFilter]);
+  }, [trips, orders, drivers, searchTerm, carrierFilter, driverFilter, baseFilter, dateFromFilter, dateToFilter, loadingBases]);
 
   const totalPages = Math.ceil(filteredAndSortedTrips.length / itemsPerPage);
   const paginatedTrips = filteredAndSortedTrips.slice(
@@ -119,13 +183,61 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1);
+  };
+
+  // Generate page numbers to display with ellipsis
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const maxPagesToShow = 7;
+    
+    if (totalPages <= maxPagesToShow) {
+      // Show all pages if total is small
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Always show first page
+      pages.push(1);
+      
+      if (currentPage <= 3) {
+        // Near the start
+        for (let i = 2; i <= 5; i++) {
+          pages.push(i);
+        }
+        pages.push('...');
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        // Near the end
+        pages.push('...');
+        for (let i = totalPages - 4; i <= totalPages; i++) {
+          pages.push(i);
+        }
+      } else {
+        // In the middle
+        pages.push('...');
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+          pages.push(i);
+        }
+        pages.push('...');
+        pages.push(totalPages);
+      }
+    }
+    
+    return pages;
   };
 
   const clearFilters = () => {
     setSearchTerm('');
     setCarrierFilter('all');
     setDriverFilter('all');
+    setBaseFilter('all');
     setDateFromFilter('');
     setDateToFilter('');
     setCurrentPage(1);
@@ -166,7 +278,7 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
           </div>
 
           {/* Filter Row */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             {/* Carrier Filter */}
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -203,6 +315,29 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
                 <option value="all">Tutti gli autisti</option>
                 {uniqueDrivers.map(driver => (
                   <option key={driver} value={driver}>{driver}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Base Filter */}
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <select
+                value={baseFilter}
+                onChange={(e) => {
+                  setBaseFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              >
+                <option value="all">Tutte le basi</option>
+                {uniqueBases.map(base => (
+                  <option key={base} value={base}>{base}</option>
                 ))}
               </select>
             </div>
@@ -253,13 +388,14 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DAS / Ordine</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Autista</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Base di Carico</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prodotto</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stato</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Società</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DAS</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vettore</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Autista</th>
                 <th scope="col" className="relative px-6 py-3">
                   <span className="sr-only">Azioni</span>
                 </th>
@@ -275,20 +411,14 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
                 
                 return (
                   <tr key={trip.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => onViewDetails(trip)}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {trip.loadingNoteData?.documentNumber || trip.id.substring(0,8) + '...'}
-                      </div>
-                      {/* <div className="text-sm text-gray-500">
-                        {order?.orderNumber || 'N/A'}
-                      </div> */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {trip.loadingNoteData?.loadingDate || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {drivers.find(d => d.id === trip.driverId)?.name || 'N/A'}
+                      {getBaseDisplayName(trip.edasData?.documentInfo?.dasNumber || trip.loadingNoteData?.documentNumber)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{trip.loadingNoteData?.consigneeName || 'N/A'}</div>
-                      <div className="text-sm text-gray-500">{trip.edasData?.recipientInfo?.name || ''}</div>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {trip.loadingNoteData?.consigneeName || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
@@ -298,22 +428,17 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
                         {trip.loadingNoteData?.volumeLiters ? `${trip.loadingNoteData.volumeLiters}L` : ''}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        trip.status === 'completato' ? 'bg-green-100 text-green-800' : 
-                        trip.status === 'in_corso' ? 'bg-yellow-100 text-yellow-800' : 
-                        trip.status === 'assegnato' ? 'bg-blue-100 text-blue-800' :
-                        trip.status === 'elaborazione' ? 'bg-purple-100 text-purple-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {trip.status.replace('_', ' ')}
-                      </span>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {getDisplayCompanyName(trip.loadingNoteData?.companyName)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {trip.loadingNoteData?.loadingDate || 'N/A'}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {trip.loadingNoteData?.documentNumber || trip.id.substring(0,8) + '...'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {driverCarriers.join(', ') || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {driver?.name || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">
@@ -345,75 +470,156 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
         )}
       </div>
 
-      {/* Pagination */}
+      {/* Enhanced Pagination */}
       {totalPages > 1 && (
-        <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-          <div className="flex-1 flex justify-between sm:hidden">
-            <button
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage === 1}
-              className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-            >
-              Precedente
-            </button>
-            <button
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage === totalPages}
-              className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-            >
-              Successivo
-            </button>
-          </div>
-          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm text-gray-700">
-                Mostrando da{' '}
-                <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span>
-                {' '}a{' '}
-                <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredAndSortedTrips.length)}</span>
-                {' '}di{' '}
-                <span className="font-medium">{filteredAndSortedTrips.length}</span>
-                {' '}risultati
-              </p>
+        <div className="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
+          {/* Mobile Pagination */}
+          <div className="flex flex-col sm:hidden space-y-3">
+            <div className="flex justify-between items-center">
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                Precedente
+              </button>
+              <span className="text-sm text-gray-700">
+                Pagina <span className="font-medium">{currentPage}</span> di <span className="font-medium">{totalPages}</span>
+              </span>
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Successivo
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </button>
             </div>
-            <div>
-              <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                <button
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  <span className="sr-only">Previous</span>
-                  <ChevronLeft className="h-5 w-5" />
-                </button>
-                
-                {/* Page Numbers */}
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  const pageNumber = i + 1;
-                  return (
-                    <button
-                      key={pageNumber}
-                      onClick={() => handlePageChange(pageNumber)}
-                      className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                        currentPage === pageNumber
-                          ? 'z-10 bg-indigo-50 border-indigo-500 text-indigo-600'
-                          : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
-                      }`}
-                    >
-                      {pageNumber}
-                    </button>
-                  );
-                })}
-                
-                <button
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  <span className="sr-only">Next</span>
-                  <ChevronRight className="h-5 w-5" />
-                </button>
-              </nav>
+            <div className="flex items-center justify-center space-x-2">
+              <label className="text-sm text-gray-700">Righe per pagina:</label>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+                className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Desktop Pagination */}
+          <div className="hidden sm:flex sm:flex-col sm:space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <p className="text-sm text-gray-700">
+                  Mostrando da{' '}
+                  <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span>
+                  {' '}a{' '}
+                  <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredAndSortedTrips.length)}</span>
+                  {' '}di{' '}
+                  <span className="font-medium">{filteredAndSortedTrips.length}</span>
+                  {' '}risultati
+                </p>
+                <div className="flex items-center space-x-2 border-l pl-4">
+                  <label className="text-sm text-gray-700">Righe per pagina:</label>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+                    className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                  {/* First Page Button */}
+                  <button
+                    onClick={() => handlePageChange(1)}
+                    disabled={currentPage === 1}
+                    className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Prima pagina"
+                  >
+                    <span className="sr-only">First</span>
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  
+                  {/* Previous Button */}
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="relative inline-flex items-center px-2 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Pagina precedente"
+                  >
+                    <span className="sr-only">Previous</span>
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  
+                  {/* Page Numbers with Ellipsis */}
+                  {getPageNumbers().map((pageNum, idx) => {
+                    if (pageNum === '...') {
+                      return (
+                        <span
+                          key={`ellipsis-${idx}`}
+                          className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700"
+                        >
+                          ...
+                        </span>
+                      );
+                    }
+                    
+                    const page = pageNum as number;
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => handlePageChange(page)}
+                        className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                          currentPage === page
+                            ? 'z-10 bg-indigo-600 border-indigo-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    );
+                  })}
+                  
+                  {/* Next Button */}
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="relative inline-flex items-center px-2 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Pagina successiva"
+                  >
+                    <span className="sr-only">Next</span>
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                  
+                  {/* Last Page Button */}
+                  <button
+                    onClick={() => handlePageChange(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Ultima pagina"
+                  >
+                    <span className="sr-only">Last</span>
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </nav>
+              </div>
             </div>
           </div>
         </div>

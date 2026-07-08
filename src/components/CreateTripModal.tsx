@@ -106,7 +106,7 @@ export default function CreateTripModal({ onConfirm, onClose, isCreating, select
   const allImagesReady = edasImageState.isComplete && loadingNoteImageState.isComplete && cartelloCounterImageState.isComplete;
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
       <div className="relative mx-auto border w-full max-w-4xl shadow-lg rounded-md bg-white my-8 max-h-[95vh] flex flex-col">
         <div className="flex justify-between items-center p-5 border-b">
           <h3 className="text-lg font-medium text-gray-900 flex items-center">

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCarriers } from '@/hooks/useFirestore';
 import { X, User } from 'lucide-react';
 
 interface CreateDriverModalProps {
@@ -11,6 +12,7 @@ interface CreateDriverModalProps {
 
 export default function CreateDriverModal({ onClose, operatorCarrier }: CreateDriverModalProps) {
   const { createUserAsAdmin } = useAuth();
+  const { carriers, loading: carriersLoading } = useCarriers();
   
   const [formData, setFormData] = useState({
     name: '',
@@ -23,7 +25,7 @@ export default function CreateDriverModal({ onClose, operatorCarrier }: CreateDr
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -72,7 +74,7 @@ export default function CreateDriverModal({ onClose, operatorCarrier }: CreateDr
   };
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm overflow-y-auto h-full w-full z-50">
       <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 lg:w-1/3 shadow-lg rounded-md bg-white">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-medium text-gray-900">
@@ -134,20 +136,30 @@ export default function CreateDriverModal({ onClose, operatorCarrier }: CreateDr
             <label htmlFor="carrier" className="block text-sm font-medium text-gray-700">
               Vettore *
             </label>
-            <input
-              type="text"
+            <select
               id="carrier"
               name="carrier"
               required
               className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="MP, GNC, etc."
               value={formData.carrier}
               onChange={handleInputChange}
-              disabled={!!operatorCarrier} // Disabilita se il vettore è passato dall'operatore
-            />
+              disabled={!!operatorCarrier || carriersLoading}
+            >
+              <option value="">Seleziona un vettore</option>
+              {carriers.map((carrier) => (
+                <option key={carrier} value={carrier}>
+                  {carrier}
+                </option>
+              ))}
+            </select>
             {operatorCarrier && (
               <p className="mt-1 text-xs text-gray-500">
                 Il vettore è preimpostato dal tuo account operatore
+              </p>
+            )}
+            {carriersLoading && (
+              <p className="mt-1 text-xs text-gray-500">
+                Caricamento vettori...
               </p>
             )}
           </div>

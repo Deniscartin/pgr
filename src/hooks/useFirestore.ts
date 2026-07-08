@@ -280,4 +280,49 @@ export function usePriceChecks() {
   };
 
   return { priceChecks, loading, addPriceCheck, deletePriceCheck };
+}
+
+// Hook per ottenere tutti i vettori univoci dal database
+export function useCarriers() {
+  const [carriers, setCarriers] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Carica tutti gli utenti (autisti e operatori) e estrae i carrier univoci
+    const q = query(collection(db, 'users'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const allCarriers = new Set<string>();
+      
+      snapshot.docs.forEach(doc => {
+        const userData = doc.data();
+        
+        // Estrai carriers dall'array carriers
+        if (userData.carriers && Array.isArray(userData.carriers)) {
+          userData.carriers.forEach((carrier: string) => {
+            if (carrier && carrier.trim()) {
+              allCarriers.add(carrier.trim());
+            }
+          });
+        }
+        
+        // Estrai anche dal campo carrier singolo (retrocompatibilità)
+        if (userData.carrier && typeof userData.carrier === 'string') {
+          const carrierValue = userData.carrier.trim();
+          if (carrierValue) {
+            allCarriers.add(carrierValue);
+          }
+        }
+      });
+      
+      // Converte il Set in array e ordina alfabeticamente
+      const sortedCarriers = Array.from(allCarriers).sort();
+      setCarriers(sortedCarriers);
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  return { carriers, loading };
 } 

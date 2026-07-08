@@ -39,7 +39,7 @@ export default function ManageOrderModal({ order, currentTrip, onClose }: Manage
   const loadingNote = currentTrip?.loadingNoteData;
   
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 overflow-y-auto h-full w-full z-50 flex items-center justify-center">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm overflow-y-auto h-full w-full z-50 flex items-center justify-center">
       <div className="relative p-5 border w-11/12 md:w-2/3 lg:w-3/4 shadow-lg rounded-md bg-white my-8 max-h-[90vh] flex flex-col">
         <div className="flex justify-between items-center mb-4 border-b pb-3">
           <h3 className="text-xl font-bold text-gray-900 flex items-center">

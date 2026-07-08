@@ -120,6 +120,13 @@ export async function POST(request: NextRequest) {
       lastReprocessedAt: Timestamp.now()
     };
 
+    // Se il viaggio è in stato 'elaborazione', portalo a 'completato'
+    if (tripData.status === 'elaborazione') {
+      console.log('🔄 Trip in stato "elaborazione" → cambio a "completato"');
+      updates.status = 'completato';
+      updates.completedAt = Timestamp.now();
+    }
+
     if (newEdasData) {
       updates.edasData = newEdasData;
     }

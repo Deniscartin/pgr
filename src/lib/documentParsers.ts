@@ -1,14 +1,47 @@
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { ParsedLoadingNoteData, ParsedEDASData } from '@/lib/types';
 import path from 'path';
+import fs from 'fs';
 
-// Path to service account key file (best practice per sicurezza)
-const serviceAccountKeyPath = path.join(process.cwd(), 'public', 'tidal-glider-465915-e6-bd6629717062.json');
+// Load service account credentials directly as object (works reliably in Docker standalone)
+function loadCredentials(): { client_email: string; private_key: string } | null {
+  // Try multiple possible paths for the credentials file
+  const possiblePaths = [
+    path.join(process.cwd(), 'public', 'tidal-glider-465915-e6-bd6629717062.json'),
+    path.join(process.cwd(), '..', 'public', 'tidal-glider-465915-e6-bd6629717062.json'),
+    '/app/public/tidal-glider-465915-e6-bd6629717062.json',
+  ];
 
-// Initialize Google Cloud Document AI client with EU endpoint and key file
+  for (const filePath of possiblePaths) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const parsed = JSON.parse(content);
+        console.log(`✅ Credenziali Document AI caricate da: ${filePath}`);
+        return parsed;
+      }
+    } catch (e) {
+      console.warn(`⚠️ Impossibile leggere credenziali da ${filePath}:`, e);
+    }
+  }
+
+  console.error('❌ File credenziali Document AI non trovato in nessun percorso!');
+  console.error('Percorsi tentati:', possiblePaths);
+  console.error('process.cwd():', process.cwd());
+  return null;
+}
+
+const credentials = loadCredentials();
+
+// Initialize Google Cloud Document AI client with EU endpoint and credentials object
 const documentAIClient = new DocumentProcessorServiceClient({
   apiEndpoint: 'eu-documentai.googleapis.com',
-  keyFilename: serviceAccountKeyPath
+  ...(credentials ? {
+    credentials: {
+      client_email: credentials.client_email,
+      private_key: credentials.private_key,
+    }
+  } : {})
 });
 
 /**
@@ -93,7 +126,16 @@ export async function parseLoadingNote(base64Image: string, mimeType: string): P
       const documentText = document.text || '';
 
       // Helper function to extract text from TextAnchor
-      const getText = (textAnchor: any) => {
+      const getText = (fieldOrAnchor: any) => {
+        // Handle case where we receive an object with textAnchor property (fieldName/fieldValue)
+        const textAnchor = fieldOrAnchor?.textAnchor || fieldOrAnchor;
+        
+        // First, check if there's already a 'content' field (new Document AI format)
+        if (textAnchor?.content) {
+          return textAnchor.content.trim();
+        }
+        
+        // Fallback to extracting from text segments (old format)
         if (!textAnchor?.textSegments || textAnchor.textSegments.length === 0) {
           return '';
         }
@@ -105,13 +147,38 @@ export async function parseLoadingNote(base64Image: string, mimeType: string): P
 
       // Create a map of form fields for easier lookup
       const fieldMap: Record<string, string> = {};
-      formFields.forEach((field: any) => {
-        const fieldName = getText(field.fieldName).toLowerCase();
+      
+      console.log(`📝 ANALISI FORM FIELDS (totali: ${formFields.length}):`);
+      console.log('==============================================');
+      
+      formFields.forEach((field: any, index: number) => {
+        // Log the entire field structure first
+        if (index < 3) { // Only log first 3 fields to avoid too much output
+          console.log(`\n🔍 RAW FORM FIELD ${index + 1} COMPLETE STRUCTURE:`);
+          console.log(JSON.stringify(field, null, 2));
+          console.log('---');
+        }
+        
+        const fieldName = getText(field.fieldName);
+        const fieldNameLower = fieldName.toLowerCase();
         const fieldValue = getText(field.fieldValue);
-        if (fieldName && fieldValue) {
-          fieldMap[fieldName] = fieldValue;
+        
+        console.log(`Form Field ${index + 1}:`);
+        console.log(`  Nome originale: "${fieldName}"`);
+        console.log(`  Nome lowercase: "${fieldNameLower}"`);
+        console.log(`  Valore: "${fieldValue}"`);
+        console.log(`  Has fieldName:`, !!field.fieldName);
+        console.log(`  Has fieldValue:`, !!field.fieldValue);
+        console.log(`  fieldName type:`, field.fieldName?.type);
+        console.log(`  fieldValue type:`, field.fieldValue?.type);
+        console.log('---');
+        
+        if (fieldNameLower && fieldValue) {
+          fieldMap[fieldNameLower] = fieldValue;
         }
       });
+      
+      console.log('==============================================');
 
       // Create a map of entities for easier lookup
       const entityMap: Record<string, string[]> = {};
@@ -434,7 +501,16 @@ export async function parseEdas(base64Image: string, mimeType: string): Promise<
     const documentText = document.text || '';
 
     // Helper function to extract text from TextAnchor
-    const getText = (textAnchor: any) => {
+    const getText = (fieldOrAnchor: any) => {
+      // Handle case where we receive an object with textAnchor property (fieldName/fieldValue)
+      const textAnchor = fieldOrAnchor?.textAnchor || fieldOrAnchor;
+      
+      // First, check if there's already a 'content' field (new Document AI format)
+      if (textAnchor?.content) {
+        return textAnchor.content.trim();
+      }
+      
+      // Fallback to extracting from text segments (old format)
       if (!textAnchor?.textSegments || textAnchor.textSegments.length === 0) {
         return '';
       }

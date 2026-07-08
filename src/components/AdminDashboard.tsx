@@ -23,7 +23,8 @@ import ManageOrderModal from './ManageOrderModal';
 import ImageViewerModal from './ImageViewerModal';
 import TripsTable from './TripsTable';
 import TripDetailModal from './TripDetailModal';
-import ArchiveModal from './ArchiveModal';
+import UserManagementModal from './UserManagementModal';
+import LoadingBasesModal from './LoadingBasesModal';
 import { getDisplayCompanyName } from '@/lib/companyUtils';
 import * as XLSX from 'xlsx';
 
@@ -35,9 +36,11 @@ export default function AdminDashboard() {
   
   const [showCreateTripModal, setShowCreateTripModal] = useState(false);
   const [isCreatingTrip, setIsCreatingTrip] = useState(false);
+  const [showUserManagement, setShowUserManagement] = useState(false);
   const [showCreateDriver, setShowCreateDriver] = useState(false);
   const [showCreateOperator, setShowCreateOperator] = useState(false);
   const [showCreateInvoiceManager, setShowCreateInvoiceManager] = useState(false);
+  const [showLoadingBases, setShowLoadingBases] = useState(false);
   const [showAssignTrip, setShowAssignTrip] = useState(false);
   const [showManageOrder, setShowManageOrder] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
@@ -274,25 +277,18 @@ export default function AdminDashboard() {
             Scansione Viaggio
           </button>
           <button
-            onClick={() => setShowCreateDriver(true)}
+            onClick={() => setShowUserManagement(true)}
             className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
           >
-            <UserPlus className="w-4 h-4 mr-2" />
-            Crea Autista
+            <Users className="w-4 h-4 mr-2" />
+            Gestione Utenti
           </button>
           <button
-            onClick={() => setShowCreateOperator(true)}
+            onClick={() => setShowLoadingBases(true)}
             className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
           >
-            <UserPlus className="w-4 h-4 mr-2" />
-            Crea Operatore
-          </button>
-          <button
-            onClick={() => setShowCreateInvoiceManager(true)}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
-          >
-            <UserPlus className="w-4 h-4 mr-2" />
-            Crea Gestore Fatture
+            <Plus className="w-4 h-4 mr-2" />
+            Gestisci Basi di Carico
           </button>
           <button
             onClick={() => {
@@ -356,6 +352,15 @@ export default function AdminDashboard() {
           isCreating={isCreatingTrip}
         />
       )}
+
+      {/* User Management Modal */}
+      <UserManagementModal
+        isOpen={showUserManagement}
+        onClose={() => setShowUserManagement(false)}
+        onCreateDriver={() => setShowCreateDriver(true)}
+        onCreateOperator={() => setShowCreateOperator(true)}
+        onCreateInvoiceManager={() => setShowCreateInvoiceManager(true)}
+      />
       
       {showCreateDriver && (
         <CreateDriverModal 
@@ -374,6 +379,12 @@ export default function AdminDashboard() {
           onClose={() => setShowCreateInvoiceManager(false)}
         />
       )}
+
+      {/* Loading Bases Modal */}
+      <LoadingBasesModal
+        isOpen={showLoadingBases}
+        onClose={() => setShowLoadingBases(false)}
+      />
 
       {showAssignTrip && selectedOrder && (
         <AssignTripModal 
