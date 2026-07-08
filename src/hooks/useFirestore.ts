@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  query, 
-  where, 
-  orderBy, 
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  doc,
+  getDoc,
+  query,
+  where,
+  orderBy,
+  limit,
   onSnapshot,
   Timestamp,
   deleteDoc
@@ -14,13 +16,18 @@ import {
 import { db } from '@/lib/firebase';
 import { Order, Trip, User, InvoiceData, PriceCheck } from '@/lib/types';
 
+// Numero massimo di documenti caricati di default dalle liste in tempo reale.
+// Evita di scaricare intere collezioni all'avvio: il caricamento iniziale
+// resta veloce anche quando il database cresce. Le viste caricano i piu recenti.
+export const DEFAULT_QUERY_LIMIT = 500;
+
 // Hook per gestire gli ordini
-export function useOrders() {
+export function useOrders(maxResults: number = DEFAULT_QUERY_LIMIT) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(maxResults));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const ordersData = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -33,7 +40,7 @@ export function useOrders() {
     });
 
     return unsubscribe;
-  }, []);
+  }, [maxResults]);
 
   const addOrder = async (orderData: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>) => {
     const docRef = await addDoc(collection(db, 'orders'), {
@@ -58,16 +65,91 @@ export function useOrders() {
   return { orders, loading, addOrder, updateOrder, deleteOrder };
 }
 
+// Azioni di scrittura sugli ordini senza sottoscrivere l'intera collezione.
+// Da usare quando serve solo creare/aggiornare/eliminare (es. dashboard autista,
+// modali) evitando di scaricare tutti gli ordini all'avvio.
+export function useOrderActions() {
+  const addOrder = async (orderData: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const docRef = await addDoc(collection(db, 'orders'), {
+      ...orderData,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+    return { id: docRef.id };
+  };
+
+  const updateOrder = async (id: string, orderData: Partial<Order>) => {
+    await updateDoc(doc(db, 'orders', id), {
+      ...orderData,
+      updatedAt: Timestamp.now(),
+    });
+  };
+
+  const deleteOrder = async (id: string) => {
+    await deleteDoc(doc(db, 'orders', id));
+  };
+
+  return { addOrder, updateOrder, deleteOrder };
+}
+
+// Carica solo gli ordini indicati dagli id forniti (fetch mirato, non un listener
+// sull'intera collezione). Utile per risolvere trip.orderId -> order quando i
+// viaggi sono gia filtrati (es. quelli di un singolo autista).
+export function useOrdersByIds(orderIds: string[]) {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Chiave stabile e deduplicata: evita ri-fetch se cambia solo l'ordine/duplicati.
+  const key = Array.from(new Set(orderIds.filter(Boolean))).sort().join(',');
+
+  useEffect(() => {
+    const ids = key ? key.split(',') : [];
+
+    if (ids.length === 0) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    Promise.all(
+      ids.map(async (id) => {
+        const snap = await getDoc(doc(db, 'orders', id));
+        if (!snap.exists()) return null;
+        const data = snap.data();
+        return {
+          id: snap.id,
+          ...data,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || new Date(),
+        } as Order;
+      })
+    ).then((results) => {
+      if (cancelled) return;
+      setOrders(results.filter((o): o is Order => o !== null));
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+
+  return { orders, loading };
+}
+
 // Hook per gestire i viaggi
-export function useTrips(driverId?: string) {
+export function useTrips(driverId?: string, maxResults: number = DEFAULT_QUERY_LIMIT) {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let q = query(collection(db, 'trips'), orderBy('createdAt', 'desc'));
-    
+    let q = query(collection(db, 'trips'), orderBy('createdAt', 'desc'), limit(maxResults));
+
     if (driverId) {
-      q = query(collection(db, 'trips'), where('driverId', '==', driverId), orderBy('createdAt', 'desc'));
+      q = query(collection(db, 'trips'), where('driverId', '==', driverId), orderBy('createdAt', 'desc'), limit(maxResults));
     }
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -83,7 +165,7 @@ export function useTrips(driverId?: string) {
     });
 
     return unsubscribe;
-  }, [driverId]);
+  }, [driverId, maxResults]);
 
   const addTrip = async (tripData: Omit<Trip, 'id' | 'createdAt' | 'updatedAt'>) => {
     const docRef = await addDoc(collection(db, 'trips'), {

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useTrips, useOrders } from '@/hooks/useFirestore';
+import { useTrips, useOrdersByIds, useOrderActions } from '@/hooks/useFirestore';
 import { Trip, Order } from '@/lib/types';
 import { 
   LogOut, 
@@ -27,7 +27,10 @@ import QRScannerModal from './QRScannerModal';
 export default function DriverDashboard() {
   const { userProfile, logout } = useAuth();
   const { trips, loading: tripsLoading, addTrip, updateTrip, completeTrip } = useTrips(userProfile?.id);
-  const { orders, loading: ordersLoading, addOrder } = useOrders();
+  // Carica solo gli ordini referenziati dai viaggi dell'autista, non l'intera collezione.
+  const orderIds = useMemo(() => trips.map(trip => trip.orderId).filter(Boolean), [trips]);
+  const { orders, loading: ordersLoading } = useOrdersByIds(orderIds);
+  const { addOrder } = useOrderActions();
   
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [showSignatureModal, setShowSignatureModal] = useState(false);

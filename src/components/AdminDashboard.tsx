@@ -325,13 +325,7 @@ export default function AdminDashboard() {
             <FileText className="w-4 h-4 mr-2" />
             Esporta Dati
           </button>
-          <button
-            onClick={() => setShowArchive(true)}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
-          >
-            <Archive className="w-4 h-4 mr-2" />
-            Archivio Server
-          </button>
+        
         </div>
 
         {/* Trips Table */}
@@ -466,11 +460,7 @@ export default function AdminDashboard() {
         }}
       />
 
-      {/* Archive Modal */}
-      <ArchiveModal
-        isOpen={showArchive}
-        onClose={() => setShowArchive(false)}
-      />
+      
     </div>
   );
 } 
