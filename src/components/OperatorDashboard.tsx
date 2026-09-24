@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useTrips, useOrders, useDrivers } from '@/hooks/useFirestore';
+import { useTrips, useOrders, useOrdersByIds, useDrivers, RECENT_DAYS } from '@/hooks/useFirestore';
 import { Trip, Order } from '@/lib/types';
 import { 
   LogOut, 
@@ -15,6 +15,7 @@ import {
   Download,
   Truck,
   Plus,
+  Archive,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
@@ -22,14 +23,20 @@ import CreateTripModal from './CreateTripModal';
 import CreateDriverModal from './CreateDriverModal';
 import TripsTable from './TripsTable';
 import TripDetailModal from './TripDetailModal';
+import ArchiveModal from './ArchiveModal';
 import ImageViewerModal from './ImageViewerModal';
 import { getDisplayCompanyName } from '@/lib/companyUtils';
 import * as XLSX from 'xlsx';
 
 export default function OperatorDashboard() {
   const { userProfile, logout } = useAuth();
-  const { trips, loading: tripsLoading, deleteTrip, addTrip } = useTrips();
-  const { orders, loading: ordersLoading, addOrder } = useOrders();
+  // In pagina restano solo gli ultimi RECENT_DAYS giorni; tutto il resto si
+  // consulta dall'archivio, che carica su richiesta.
+  const { trips, loading: tripsLoading, deleteTrip, addTrip } = useTrips(
+    undefined,
+    { sinceDays: RECENT_DAYS }
+  );
+  const { addOrder } = useOrders({ subscribe: false });
   
   // Debug: log dei carriers dell'operatore
   console.log('Operatore carriers:', userProfile?.carriers);
@@ -46,8 +53,12 @@ export default function OperatorDashboard() {
   const [showCreateDriver, setShowCreateDriver] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedTripForDetail, setSelectedTripForDetail] = useState<Trip | null>(null);
+  // Ordine fornito dall'archivio: serve solo quando il viaggio non e' fra
+  // quelli degli ultimi RECENT_DAYS giorni.
+  const [archivedOrderForDetail, setArchivedOrderForDetail] = useState<Order | null>(null);
   const [selectedTripForImages, setSelectedTripForImages] = useState<Trip | null>(null);
   const [isDriversSectionOpen, setIsDriversSectionOpen] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
 
   // Filter drivers by operator's carriers
   const myDrivers = useMemo(() => {
@@ -66,18 +77,24 @@ export default function OperatorDashboard() {
     );
   }, [trips, myDrivers]);
 
-  const myOrders = useMemo(() => {
-    const myTripOrderIds = myTrips.map(trip => trip.orderId);
-    return orders.filter(order => myTripOrderIds.includes(order.id));
-  }, [orders, myTrips]);
+  // Gli ordini si leggono solo per i viaggi a schermo, non tutta la collection.
+  const myOrderIds = useMemo(
+    () => myTrips.map(trip => trip.orderId).filter(Boolean),
+    [myTrips]
+  );
+  const { orders: myOrders, loading: ordersLoading } = useOrdersByIds(myOrderIds);
+
+  const myDriverIds = useMemo(() => myDrivers.map(driver => driver.id), [myDrivers]);
 
   // Handle trip detail view
-  const handleViewTripDetails = (trip: Trip) => {
+  const handleViewTripDetails = (trip: Trip, order?: Order | null) => {
     setSelectedTripForDetail(trip);
+    setArchivedOrderForDetail(order ?? null);
   };
 
   const handleCloseDetailModal = () => {
     setSelectedTripForDetail(null);
+    setArchivedOrderForDetail(null);
   };
 
   const handleViewImages = (trip: Trip) => {
@@ -416,6 +433,14 @@ export default function OperatorDashboard() {
               Esporta Viaggi Excel
             </button>
           )}
+
+          <button
+            onClick={() => setShowArchive(true)}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
+          >
+            <Archive className="w-4 h-4 mr-2" />
+            Archivio
+          </button>
         </div>
 
         {/* Drivers Table - Collapsible */}
@@ -504,9 +529,12 @@ export default function OperatorDashboard() {
         {/* Trips Table */}
         <div className="bg-white shadow rounded-lg">
           <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
+            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-1">
               Viaggi dei Miei Autisti ({myTrips.length})
             </h3>
+            <p className="mb-4 text-sm text-gray-600">
+              Ultimi {RECENT_DAYS} giorni. Per gli ordini precedenti apri l&apos;archivio.
+            </p>
             
             {myTrips.length > 0 ? (
               <TripsTable
@@ -549,11 +577,23 @@ export default function OperatorDashboard() {
         <TripDetailModal
           isOpen={true}
           trip={selectedTripForDetail}
-          order={myOrders.find(o => o.id === selectedTripForDetail.orderId) || null}
+          order={myOrders.find(o => o.id === selectedTripForDetail.orderId) ?? archivedOrderForDetail}
           onClose={handleCloseDetailModal}
           onViewImages={handleViewImages}
         />
       )}
+
+      <ArchiveModal
+        isOpen={showArchive}
+        onClose={() => setShowArchive(false)}
+        drivers={drivers}
+        driverIds={myDriverIds}
+        onViewDetails={(trip, order) => {
+          setShowArchive(false);
+          handleViewTripDetails(trip, order);
+        }}
+        onDeleteTrip={handleDeleteTrip}
+      />
 
       {/* Image Viewer Modal */}
       {showImageViewer && selectedTripForImages && (

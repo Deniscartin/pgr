@@ -163,17 +163,33 @@ export function useOrdersByIds(orderIds: string[]) {
   return { orders, loading };
 }
 
+// Numero di giorni mostrati dalle dashboard admin e operatore prima di
+// dover aprire l'archivio.
+export const RECENT_DAYS = 90;
+
 // Hook per gestire i viaggi.
-// `todayOnly: true` limita la query ai viaggi creati dalla mezzanotte in poi:
-// serve alla dashboard autista, che non deve scaricare lo storico completo.
+// `todayOnly: true` limita la query ai viaggi creati dalla mezzanotte in poi
+// (dashboard autista), `sinceDays: N` a quelli degli ultimi N giorni
+// (dashboard admin e operatore). Senza nessuna delle due la query non ha
+// limite di data e scarica l'intera collection.
 export function useTrips(
   driverId?: string,
-  options?: { todayOnly?: boolean; requireDriverId?: boolean }
+  options?: { todayOnly?: boolean; sinceDays?: number; requireDriverId?: boolean }
 ) {
   const todayOnly = options?.todayOnly ?? false;
+  const sinceDays = options?.sinceDays;
   const requireDriverId = options?.requireDriverId ?? false;
   const dayStart = useTodayStart();
-  const dayStartMs = todayOnly ? dayStart.getTime() : 0;
+
+  // La soglia e' sempre ancorata a mezzanotte, non all'istante corrente: cosi'
+  // cambia una volta al giorno e la query non viene ricreata a ogni render.
+  const fromMs = useMemo(() => {
+    if (todayOnly) return dayStart.getTime();
+    if (sinceDays === undefined) return 0;
+    const from = new Date(dayStart);
+    from.setDate(from.getDate() - sinceDays);
+    return from.getTime();
+  }, [todayOnly, sinceDays, dayStart]);
 
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,8 +209,8 @@ export function useTrips(
     if (driverId) {
       constraints.push(where('driverId', '==', driverId));
     }
-    if (todayOnly) {
-      constraints.push(where('createdAt', '>=', Timestamp.fromMillis(dayStartMs)));
+    if (fromMs > 0) {
+      constraints.push(where('createdAt', '>=', Timestamp.fromMillis(fromMs)));
     }
     constraints.push(orderBy('createdAt', 'desc'));
 
@@ -206,7 +222,7 @@ export function useTrips(
     });
 
     return unsubscribe;
-  }, [driverId, todayOnly, dayStartMs, requireDriverId]);
+  }, [driverId, fromMs, requireDriverId]);
 
   const addTrip = async (tripData: Omit<Trip, 'id' | 'createdAt' | 'updatedAt'>) => {
     const docRef = await addDoc(collection(db, 'trips'), {
@@ -248,59 +264,82 @@ export function useTrips(
   return { trips, loading, addTrip, updateTrip, completeTrip, deleteTrip };
 }
 
-const PAST_TRIPS_PAGE_SIZE = 20;
+const ARCHIVE_PAGE_SIZE = 50;
 
-// Hook per lo storico viaggi dell'autista: caricato solo su richiesta
-// (`enabled`), a pagine e senza listener realtime — sono viaggi già chiusi.
-export function usePastTrips(driverId: string | undefined, enabled: boolean) {
-  const dayStart = useTodayStart();
-  const dayStartMs = dayStart.getTime();
-
+// Hook per l'archivio viaggi di admin e operatore: l'intera collection, senza
+// limite di data, caricata solo all'apertura del modale (`enabled`), a pagine
+// e senza listener realtime — sono dati storici, non devono restare in ascolto.
+//
+// `driverIds` restringe l'archivio agli autisti dell'operatore. Firestore
+// ammette al massimo IN_QUERY_LIMIT valori in una clausola `in`: oltre quella
+// soglia il filtro viene applicato lato client, quindi una pagina puo'
+// contenere meno di ARCHIVE_PAGE_SIZE risultati visibili.
+export function useArchivedTrips(enabled: boolean, driverIds?: string[]) {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const cursorRef = useRef<QueryDocumentSnapshot<DocumentData> | null>(null);
 
+  // Chiave stabile: l'effetto non deve ripartire a ogni render solo perche'
+  // l'array arriva con una nuova identita'.
+  const idsKey = useMemo(
+    () => (driverIds ? Array.from(new Set(driverIds.filter(Boolean))).sort().join(',') : ''),
+    [driverIds]
+  );
+
   const fetchPage = useCallback(async (append: boolean) => {
-    if (!driverId) return;
+    const ids = idsKey ? idsKey.split(',') : [];
+    const restricted = driverIds !== undefined;
+
+    // L'operatore senza autisti non ha nulla da archiviare: senza questo
+    // controllo la query partirebbe senza filtro, mostrando i viaggi di tutti.
+    if (restricted && ids.length === 0) {
+      setTrips([]);
+      setHasMore(false);
+      return;
+    }
+
+    const serverSideFilter = ids.length > 0 && ids.length <= IN_QUERY_LIMIT;
 
     setLoading(true);
     try {
-      const constraints: QueryConstraint[] = [
-        where('driverId', '==', driverId),
-        where('status', '==', 'completato'),
-        where('createdAt', '<', Timestamp.fromMillis(dayStartMs)),
-        orderBy('createdAt', 'desc'),
-      ];
+      const constraints: QueryConstraint[] = [];
+      if (serverSideFilter) {
+        constraints.push(where('driverId', 'in', ids));
+      }
+      constraints.push(orderBy('createdAt', 'desc'));
 
       if (append && cursorRef.current) {
         constraints.push(startAfter(cursorRef.current));
       }
-      constraints.push(limit(PAST_TRIPS_PAGE_SIZE));
+      constraints.push(limit(ARCHIVE_PAGE_SIZE));
 
       const snapshot = await getDocs(query(collection(db, 'trips'), ...constraints));
-      const page = snapshot.docs.map(mapTrip);
+      let page = snapshot.docs.map(mapTrip);
+      if (restricted && !serverSideFilter) {
+        page = page.filter(trip => trip.driverId && ids.includes(trip.driverId));
+      }
 
       cursorRef.current = snapshot.docs[snapshot.docs.length - 1] ?? null;
-      setHasMore(snapshot.docs.length === PAST_TRIPS_PAGE_SIZE);
+      setHasMore(snapshot.docs.length === ARCHIVE_PAGE_SIZE);
       setTrips(prev => (append ? [...prev, ...page] : page));
     } catch (error) {
-      console.error('Error loading past trips:', error);
+      console.error('Error loading archived trips:', error);
     } finally {
       setLoading(false);
     }
-  }, [driverId, dayStartMs]);
+  }, [idsKey, driverIds]);
 
   useEffect(() => {
-    if (!enabled || !driverId) return;
+    if (!enabled) return;
 
-    // Riapertura dello storico: si riparte sempre dalla prima pagina, così i
+    // Riapertura dell'archivio: si riparte sempre dalla prima pagina, cosi' i
     // dati sono freschi anche senza listener.
     cursorRef.current = null;
     setTrips([]);
     setHasMore(false);
     fetchPage(false);
-  }, [enabled, driverId, fetchPage]);
+  }, [enabled, fetchPage]);
 
   const loadMore = useCallback(() => {
     if (loading || !hasMore) return;

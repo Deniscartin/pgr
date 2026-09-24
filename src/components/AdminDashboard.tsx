@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useOrders, useTrips, useDrivers } from '@/hooks/useFirestore';
+import { useOrders, useOrdersByIds, useTrips, useDrivers, RECENT_DAYS } from '@/hooks/useFirestore';
 import { Order, Trip } from '@/lib/types';
 import { 
   LogOut, 
@@ -24,14 +24,26 @@ import ImageViewerModal from './ImageViewerModal';
 import TripsTable from './TripsTable';
 import TripDetailModal from './TripDetailModal';
 import UserManagementModal from './UserManagementModal';
+import ArchiveModal from './ArchiveModal';
 import LoadingBasesModal from './LoadingBasesModal';
 import { getDisplayCompanyName } from '@/lib/companyUtils';
 import * as XLSX from 'xlsx';
 
 export default function AdminDashboard() {
   const { userProfile, logout } = useAuth();
-  const { orders, loading: ordersLoading, deleteOrder, updateOrder, addOrder } = useOrders();
-  const { trips, loading: tripsLoading, deleteTrip, updateTrip, addTrip } = useTrips();
+  // In pagina restano solo gli ultimi RECENT_DAYS giorni; tutto il resto si
+  // consulta dall'archivio, che carica su richiesta.
+  const { trips, loading: tripsLoading, deleteTrip, updateTrip, addTrip } = useTrips(
+    undefined,
+    { sinceDays: RECENT_DAYS }
+  );
+  // Gli ordini si leggono solo per i viaggi a schermo, non tutta la collection.
+  const visibleOrderIds = useMemo(
+    () => trips.map(trip => trip.orderId).filter(Boolean),
+    [trips]
+  );
+  const { orders, loading: ordersLoading } = useOrdersByIds(visibleOrderIds);
+  const { deleteOrder, updateOrder, addOrder } = useOrders({ subscribe: false });
   const { drivers, loading: driversLoading } = useDrivers();
   
   const [showCreateTripModal, setShowCreateTripModal] = useState(false);
@@ -44,10 +56,13 @@ export default function AdminDashboard() {
   const [showAssignTrip, setShowAssignTrip] = useState(false);
   const [showManageOrder, setShowManageOrder] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
-  const [showArchive, setShowArchive] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [selectedTripForDetail, setSelectedTripForDetail] = useState<Trip | null>(null);
+  // Ordine fornito dall'archivio: serve solo quando il viaggio non e' fra
+  // quelli degli ultimi RECENT_DAYS giorni.
+  const [archivedOrderForDetail, setArchivedOrderForDetail] = useState<Order | null>(null);
+  const [showArchive, setShowArchive] = useState(false);
 
   const completedTrips = trips.filter(trip => trip.status === 'completato');
   const pendingTrips = trips.filter(trip => trip.status !== 'completato');
@@ -57,12 +72,14 @@ export default function AdminDashboard() {
     setShowImageViewer(true);
   };
 
-  const handleViewTripDetails = (trip: Trip) => {
+  const handleViewTripDetails = (trip: Trip, order?: Order | null) => {
     setSelectedTripForDetail(trip);
+    setArchivedOrderForDetail(order ?? null);
   };
 
   const handleCloseDetailModal = () => {
     setSelectedTripForDetail(null);
+    setArchivedOrderForDetail(null);
   };
 
   const handleDeleteTrip = async (trip: Trip) => {
@@ -195,7 +212,7 @@ export default function AdminDashboard() {
                 <div className="ml-5 w-0 flex-1">
                   <dl>
                     <dt className="text-sm font-medium text-gray-500 truncate">
-                      Ordini Totali
+                      Ordini ({RECENT_DAYS} giorni)
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
                       {orders.length}
@@ -325,10 +342,19 @@ export default function AdminDashboard() {
             <FileText className="w-4 h-4 mr-2" />
             Esporta Dati
           </button>
-        
+          <button
+            onClick={() => setShowArchive(true)}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
+          >
+            <Archive className="w-4 h-4 mr-2" />
+            Archivio
+          </button>
         </div>
 
         {/* Trips Table */}
+        <p className="mb-2 text-sm text-gray-600">
+          Ultimi {RECENT_DAYS} giorni. Per gli ordini precedenti apri l&apos;archivio.
+        </p>
         <TripsTable 
           trips={trips} 
           orders={orders} 
@@ -420,7 +446,7 @@ export default function AdminDashboard() {
         isOpen={!!selectedTripForDetail}
         onClose={handleCloseDetailModal}
         trip={selectedTripForDetail}
-        order={selectedTripForDetail ? orders.find(o => o.id === selectedTripForDetail.orderId) || null : null}
+        order={selectedTripForDetail ? orders.find(o => o.id === selectedTripForDetail.orderId) ?? archivedOrderForDetail : null}
         onViewImages={(trip) => {
           handleCloseDetailModal();
           handleViewImages(trip);
@@ -460,7 +486,16 @@ export default function AdminDashboard() {
         }}
       />
 
-      
+      <ArchiveModal
+        isOpen={showArchive}
+        onClose={() => setShowArchive(false)}
+        drivers={drivers}
+        onViewDetails={(trip, order) => {
+          setShowArchive(false);
+          handleViewTripDetails(trip, order);
+        }}
+        onDeleteTrip={handleDeleteTrip}
+      />
     </div>
   );
 } 

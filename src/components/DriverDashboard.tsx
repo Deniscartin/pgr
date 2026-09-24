@@ -2,13 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useTrips, useOrders, useOrdersByIds, usePastTrips } from '@/hooks/useFirestore';
+import { useTrips, useOrders, useOrdersByIds } from '@/hooks/useFirestore';
 import { Trip, Order } from '@/lib/types';
 import { 
   LogOut, 
   Plus, 
   FileText, 
-  History,
   CheckCircle,
   Eye,
   Camera,
@@ -19,14 +18,14 @@ import {
 } from 'lucide-react';
 import SignatureModal from './SignatureModal';
 import CreateTripModal from './CreateTripModal';
-import PastTripsModal from './PastTripsModal';
 import ImageViewerModal from './ImageViewerModal';
 import DriverQRCode from './DriverQRCode';
 import QRScannerModal from './QRScannerModal';
 
 export default function DriverDashboard() {
   const { userProfile, logout } = useAuth();
-  // Solo i viaggi di oggi: lo storico si carica su richiesta da "Viaggi Passati".
+  // L'autista vede unicamente i viaggi della giornata corrente: nessuno
+  // storico, ne' in pagina ne' caricabile su richiesta.
   const { trips, loading: tripsLoading, addTrip, updateTrip, completeTrip } = useTrips(
     userProfile?.id,
     { todayOnly: true, requireDriverId: true }
@@ -37,23 +36,15 @@ export default function DriverDashboard() {
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [showCreateTripModal, setShowCreateTripModal] = useState(false);
   const [isCreatingTrip, setIsCreatingTrip] = useState(false);
-  const [showPastTrips, setShowPastTrips] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
 
   const [selectedTripForAction, setSelectedTripForAction] = useState<Trip | null>(null);
 
-  const {
-    trips: pastTrips,
-    loading: pastTripsLoading,
-    hasMore: hasMorePastTrips,
-    loadMore: loadMorePastTrips,
-  } = usePastTrips(userProfile?.id, showPastTrips);
-
   // Gli ordini vengono letti solo per i viaggi effettivamente a schermo.
   const visibleOrderIds = useMemo(
-    () => [...trips, ...pastTrips].map(trip => trip.orderId),
-    [trips, pastTrips]
+    () => trips.map(trip => trip.orderId),
+    [trips]
   );
   const { orders } = useOrdersByIds(visibleOrderIds);
 
@@ -160,8 +151,8 @@ export default function DriverDashboard() {
     }
   };
 
-  // Gli ordini si risolvono dopo i viaggi: non devono bloccare la dashboard,
-  // altrimenti l'apertura dello storico farebbe ricomparire lo spinner.
+  // Gli ordini si risolvono dopo i viaggi e non devono bloccare la dashboard:
+  // i viaggi sono gia' utilizzabili senza i dati dell'ordine collegato.
   if (tripsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -219,17 +210,6 @@ export default function DriverDashboard() {
             <QrCode className="w-5 h-5 mr-2" />
             Mostra il mio QR Code
           </button> */}
-          
-          <button
-            onClick={() => setShowPastTrips(true)}
-            className="w-full flex items-center justify-between px-4 py-3 bg-white border border-gray-200 rounded-xl font-medium text-gray-800 shadow-sm hover:bg-gray-50"
-          >
-            <div className="flex items-center min-w-0">
-              <History className="w-4 h-4 mr-2 text-gray-500 flex-shrink-0" />
-              <span className="truncate">Viaggi Passati</span>
-            </div>
-            <Eye className="w-4 h-4 text-gray-500 flex-shrink-0" />
-          </button>
         </div>
 
         {/* Today's Processing Trips - Mobile Cards */}
@@ -460,19 +440,6 @@ export default function DriverDashboard() {
           onConfirm={handleCreateTripFromImages}
           onClose={() => setShowCreateTripModal(false)}
           isCreating={isCreatingTrip}
-        />
-      )}
-
-      {/* Past Trips Modal */}
-      {showPastTrips && (
-        <PastTripsModal
-          trips={pastTrips}
-          orders={orders}
-          loading={pastTripsLoading}
-          hasMore={hasMorePastTrips}
-          onLoadMore={loadMorePastTrips}
-          isOpen={showPastTrips}
-          onClose={() => setShowPastTrips(false)}
         />
       )}
 
