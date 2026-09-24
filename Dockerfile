@@ -31,10 +31,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Installa le dipendenze nel runner per i serverExternalPackages
-# (es. @google-cloud/documentai che non viene bundlato da Next.js standalone)
+# Copia le dipendenze dalla fase deps e rimuovi le devDependencies
+# (necessario per serverExternalPackages come @google-cloud/documentai)
+COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
-RUN npm install --omit=dev
+RUN npm prune --omit=dev
 
 USER nextjs
 

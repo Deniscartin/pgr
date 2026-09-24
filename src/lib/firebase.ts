@@ -1,6 +1,11 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -27,7 +32,29 @@ const app = initializeApp(firebaseConfig);
 const imageStorageApp = initializeApp(imageStorageConfig, 'imageStorage');
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+// Firestore con cache persistente su IndexedDB: alle aperture successive i dati
+// vengono mostrati istantaneamente dalla cache mentre l'aggiornamento arriva in
+// background. persistentMultipleTabManager sincronizza la cache tra piu schede.
+// initializeFirestore va chiamato una sola volta; su ambienti senza IndexedDB
+// (es. SSR / rendering server) si ricade su getFirestore in memoria.
+function createDb() {
+  if (typeof window === 'undefined') {
+    return getFirestore(app);
+  }
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
+  } catch {
+    // Se initializeFirestore e gia stato chiamato o IndexedDB non e disponibile.
+    return getFirestore(app);
+  }
+}
+
+export const db = createDb();
 export const storage = getStorage(app);
 export const imageStorage = getStorage(imageStorageApp);
 export default app; 
