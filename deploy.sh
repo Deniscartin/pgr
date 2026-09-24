@@ -79,6 +79,14 @@ set -e
 sudo mkdir -p /opt/petrolis
 sudo chown "$USER":"$USER" /opt/petrolis
 cd /opt/petrolis
+
+# tar sovrascrive i file dell'archivio ma non rimuove quelli spariti dal
+# progetto: senza questa pulizia un sorgente cancellato resta sul server e
+# viene ricompilato al deploy successivo. Le tre cartelle arrivano sempre
+# complete dall'archivio, quindi si possono azzerare.
+# La radice invece non si tocca: contiene .env.local, che esiste solo qui.
+rm -rf src public scripts
+
 tar xzf /tmp/petrolis-deploy.tar.gz
 rm /tmp/petrolis-deploy.tar.gz
 EOFEXTRACT
