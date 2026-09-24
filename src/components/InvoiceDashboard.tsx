@@ -19,7 +19,6 @@ import {
   Filter,
   X
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 
 export default function InvoiceDashboard() {
   const { userProfile, logout } = useAuth();
@@ -275,7 +274,11 @@ export default function InvoiceDashboard() {
     }
   };
 
-  const handleExportToExcel = () => {
+
+// xlsx pesa piu' di tutto il resto della dashboard messo insieme e serve solo
+// quando si preme Esporta: viene caricato al click, non all'apertura.
+  const handleExportToExcel = async () => {
+    const XLSX = await import('xlsx');
     const dataToExport: any[] = [];
     
     // Filtra solo fatture con quantità in litri (per il calcolo dei margini)
@@ -514,6 +517,7 @@ export default function InvoiceDashboard() {
     }
 
     try {
+      const XLSX = await import('xlsx');
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer);
       const sheetName = workbook.SheetNames[0];

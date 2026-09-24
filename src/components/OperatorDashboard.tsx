@@ -26,7 +26,6 @@ import TripDetailModal from './TripDetailModal';
 import ArchiveModal from './ArchiveModal';
 import ImageViewerModal from './ImageViewerModal';
 import { getDisplayCompanyName } from '@/lib/companyUtils';
-import * as XLSX from 'xlsx';
 
 export default function OperatorDashboard() {
   const { userProfile, logout } = useAuth();
@@ -82,7 +81,7 @@ export default function OperatorDashboard() {
     () => myTrips.map(trip => trip.orderId).filter(Boolean),
     [myTrips]
   );
-  const { orders: myOrders, loading: ordersLoading } = useOrdersByIds(myOrderIds);
+  const { orders: myOrders } = useOrdersByIds(myOrderIds);
 
   const myDriverIds = useMemo(() => myDrivers.map(driver => driver.id), [myDrivers]);
 
@@ -184,7 +183,11 @@ export default function OperatorDashboard() {
   };
 
   // Export function for operator's trips
-  const handleExport = () => {
+
+// xlsx pesa piu' di tutto il resto della dashboard messo insieme e serve solo
+// quando si preme Esporta: viene caricato al click, non all'apertura.
+  const handleExport = async () => {
+    const XLSX = await import('xlsx');
     const dataToExport = myTrips.map(trip => {
       const order = myOrders.find(o => o.id === trip.orderId);
       let dateString = '';
@@ -232,7 +235,11 @@ export default function OperatorDashboard() {
   const completedTrips = myTrips.filter(trip => trip.status === 'completato');
   const pendingTrips = myTrips.filter(trip => trip.status !== 'completato');
 
-  if (tripsLoading || ordersLoading || driversLoading) {
+  // Gli ordini si risolvono solo dopo i viaggi, perche' si leggono per id:
+  // aspettarli qui incatenerebbe due round-trip prima di mostrare qualcosa.
+  // La tabella e' gia' utilizzabile senza, i dati dell'ordine compaiono appena
+  // arrivano.
+  if (tripsLoading || driversLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-500"></div>

@@ -1,11 +1,31 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/contexts/AuthContext';
 import LoginForm from '@/components/LoginForm';
-import AdminDashboard from '@/components/AdminDashboard';
-import DriverDashboard from '@/components/DriverDashboard';
-import OperatorDashboard from '@/components/OperatorDashboard';
-import InvoiceDashboard from '@/components/InvoiceDashboard';
+
+// Le dashboard si caricano per ruolo. Importate staticamente finivano tutte
+// nello stesso bundle, quindi ogni utente scaricava anche il codice dei ruoli
+// che non ha: un autista si portava dietro xlsx e jspdf delle dashboard
+// admin e fatture senza poterli usare.
+const DashboardLoader = () => (
+  <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-500"></div>
+  </div>
+);
+
+const AdminDashboard = dynamic(() => import('@/components/AdminDashboard'), {
+  loading: DashboardLoader,
+});
+const DriverDashboard = dynamic(() => import('@/components/DriverDashboard'), {
+  loading: DashboardLoader,
+});
+const OperatorDashboard = dynamic(() => import('@/components/OperatorDashboard'), {
+  loading: DashboardLoader,
+});
+const InvoiceDashboard = dynamic(() => import('@/components/InvoiceDashboard'), {
+  loading: DashboardLoader,
+});
 
 export default function Home() {
   const { currentUser, userProfile, loading } = useAuth();

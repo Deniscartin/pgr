@@ -27,7 +27,6 @@ import UserManagementModal from './UserManagementModal';
 import ArchiveModal from './ArchiveModal';
 import LoadingBasesModal from './LoadingBasesModal';
 import { getDisplayCompanyName } from '@/lib/companyUtils';
-import * as XLSX from 'xlsx';
 
 export default function AdminDashboard() {
   const { userProfile, logout } = useAuth();
@@ -42,7 +41,7 @@ export default function AdminDashboard() {
     () => trips.map(trip => trip.orderId).filter(Boolean),
     [trips]
   );
-  const { orders, loading: ordersLoading } = useOrdersByIds(visibleOrderIds);
+  const { orders } = useOrdersByIds(visibleOrderIds);
   const { deleteOrder, updateOrder, addOrder } = useOrders({ subscribe: false });
   const { drivers, loading: driversLoading } = useDrivers();
   
@@ -66,6 +65,40 @@ export default function AdminDashboard() {
 
   const completedTrips = trips.filter(trip => trip.status === 'completato');
   const pendingTrips = trips.filter(trip => trip.status !== 'completato');
+
+
+// xlsx pesa piu' di tutto il resto della dashboard messo insieme e serve solo
+// quando si preme Esporta: viene caricato al click, non all'apertura.
+  const handleExport = async () => {
+    const XLSX = await import('xlsx');
+    const dataToExport = trips.map(trip => {
+      const driver = drivers.find(d => d.id === trip.driverId);
+      const driverCarriers = driver?.carriers || (driver?.carrier ? [driver.carrier] : []);
+      
+      return {
+        'Società': getDisplayCompanyName(trip.loadingNoteData?.companyName),
+        'Deposito': trip.loadingNoteData?.depotLocation || trip.loadingNoteData?.shipperName || 'N/A',
+        'Data': trip.loadingNoteData?.loadingDate || 'N/A',
+        'Cliente': trip.loadingNoteData?.consigneeName || 'N/A',
+        'Destinazione': trip.loadingNoteData?.destinationName || 'N/A',
+        'Prodotto': trip.loadingNoteData?.productDescription || 'N/A',
+        'Quantità Consegnata (LITRI)': trip.loadingNoteData?.volumeLiters || 'N/A',
+        'Densità a 15°': trip.loadingNoteData?.densityAt15C || 'N/A',
+        'Densità Ambiente': trip.loadingNoteData?.densityAtAmbientTemp || trip.edasData?.productInfo?.densityAtAmbientTemp || 'N/A',
+        'Quantità in KG': trip.loadingNoteData?.netWeightKg || 'N/A',
+        'Vettore': trip.loadingNoteData?.carrierName || driverCarriers.join(', ') || 'N/A',
+        'Autista': drivers.find(d => d.id === trip.driverId)?.name || 'N/A',
+        'Committente': trip.loadingNoteData?.committenteName || 'N/A',
+        'Fornitore': trip.loadingNoteData?.supplierLocation || 'N/A',
+        'Numero DAS': trip.loadingNoteData?.documentNumber || 'N/A'
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Viaggi");
+    XLSX.writeFile(wb, "report_viaggi.xlsx");
+  };
 
   const handleViewImages = (trip: Trip) => {
     setSelectedTrip(trip);
@@ -169,7 +202,11 @@ export default function AdminDashboard() {
     }
   };
 
-  if (ordersLoading || tripsLoading || driversLoading) {
+  // Gli ordini si risolvono solo dopo i viaggi, perche' si leggono per id:
+  // aspettarli qui incatenerebbe due round-trip prima di mostrare qualcosa.
+  // La tabella e' gia' utilizzabile senza, i dati dell'ordine compaiono appena
+  // arrivano.
+  if (tripsLoading || driversLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-500"></div>
@@ -308,35 +345,7 @@ export default function AdminDashboard() {
             Gestisci Basi di Carico
           </button>
           <button
-            onClick={() => {
-              const dataToExport = trips.map(trip => {
-                const driver = drivers.find(d => d.id === trip.driverId);
-                const driverCarriers = driver?.carriers || (driver?.carrier ? [driver.carrier] : []);
-                
-                return {
-                  'Società': getDisplayCompanyName(trip.loadingNoteData?.companyName),
-                  'Deposito': trip.loadingNoteData?.depotLocation || trip.loadingNoteData?.shipperName || 'N/A',
-                  'Data': trip.loadingNoteData?.loadingDate || 'N/A',
-                  'Cliente': trip.loadingNoteData?.consigneeName || 'N/A',
-                  'Destinazione': trip.loadingNoteData?.destinationName || 'N/A',
-                  'Prodotto': trip.loadingNoteData?.productDescription || 'N/A',
-                  'Quantità Consegnata (LITRI)': trip.loadingNoteData?.volumeLiters || 'N/A',
-                  'Densità a 15°': trip.loadingNoteData?.densityAt15C || 'N/A',
-                  'Densità Ambiente': trip.loadingNoteData?.densityAtAmbientTemp || trip.edasData?.productInfo?.densityAtAmbientTemp || 'N/A',
-                  'Quantità in KG': trip.loadingNoteData?.netWeightKg || 'N/A',
-                  'Vettore': trip.loadingNoteData?.carrierName || driverCarriers.join(', ') || 'N/A',
-                  'Autista': drivers.find(d => d.id === trip.driverId)?.name || 'N/A',
-                  'Committente': trip.loadingNoteData?.committenteName || 'N/A',
-                  'Fornitore': trip.loadingNoteData?.supplierLocation || 'N/A',
-                  'Numero DAS': trip.loadingNoteData?.documentNumber || 'N/A'
-                };
-              });
-
-              const ws = XLSX.utils.json_to_sheet(dataToExport);
-              const wb = XLSX.utils.book_new();
-              XLSX.utils.book_append_sheet(wb, ws, "Viaggi");
-              XLSX.writeFile(wb, "report_viaggi.xlsx");
-            }}
+            onClick={handleExport}
             className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
           >
             <FileText className="w-4 h-4 mr-2" />
