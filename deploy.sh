@@ -1,12 +1,46 @@
 #!/bin/bash
 
 # Script di deploy per Petrolis WebApp
-# Deploy su Hetzner con Docker + Nginx reverse proxy
+# Deploy su Oracle Cloud (OCI) con Docker + Nginx reverse proxy
 
-SERVER_IP="37.27.247.232"
-SERVER_USER="root"
+set -euo pipefail
+
+SERVER_IP="${SERVER_IP:-80.225.87.5}"
+SSH_KEY="${SSH_KEY:-$HOME/Desktop/ssh-key-2026-08-27.key}"
 REMOTE_DIR="/opt/petrolis"
 DOMAIN="api.petrolis.it"
+
+if [ ! -f "$SSH_KEY" ]; then
+  echo "❌ Chiave SSH non trovata: $SSH_KEY"
+  echo "   Impostala con: SSH_KEY=/percorso/della/chiave ./deploy.sh"
+  exit 1
+fi
+chmod 600 "$SSH_KEY" 2>/dev/null || true
+
+SSH_OPTS=(-i "$SSH_KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new)
+
+# Le istanze Oracle non permettono il login diretto come root:
+# individua l'utente di default dell'immagine (opc su Oracle Linux, ubuntu su Ubuntu).
+if [ -n "${SERVER_USER:-}" ]; then
+  echo "👤 Utente SSH: ${SERVER_USER}"
+else
+  echo "🔍 Rilevamento utente SSH sul server..."
+  for candidate in opc ubuntu oracle root; do
+    if ssh "${SSH_OPTS[@]}" -o BatchMode=yes -o ConnectTimeout=10 \
+        "${candidate}@${SERVER_IP}" true 2>/dev/null; then
+      SERVER_USER="$candidate"
+      break
+    fi
+  done
+  if [ -z "${SERVER_USER:-}" ]; then
+    echo "❌ Impossibile connettersi a ${SERVER_IP} con la chiave fornita."
+    echo "   Forza l'utente con: SERVER_USER=opc ./deploy.sh"
+    exit 1
+  fi
+  echo "✅ Utente rilevato: ${SERVER_USER}"
+fi
+
+SSH_TARGET="${SERVER_USER}@${SERVER_IP}"
 
 echo "📦 Preparazione archivio per il deploy..."
 
@@ -31,18 +65,19 @@ tar czf /tmp/petrolis-deploy.tar.gz \
 
 echo "✅ Archivio creato!"
 echo ""
-echo "📤 Trasferimento archivio al server Hetzner..."
+echo "📤 Trasferimento archivio al server Oracle (${SERVER_IP})..."
 
 # Trasferisci l'archivio via SCP
-scp /tmp/petrolis-deploy.tar.gz ${SERVER_USER}@${SERVER_IP}:/tmp/
+scp "${SSH_OPTS[@]}" /tmp/petrolis-deploy.tar.gz "${SSH_TARGET}:/tmp/"
 
 echo "✅ Archivio trasferito!"
 echo ""
 echo "📦 Estrazione archivio sul server..."
 
-# Estrai l'archivio sul server
-ssh ${SERVER_USER}@${SERVER_IP} << 'EOFEXTRACT'
-mkdir -p /opt/petrolis
+ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" 'bash -s' << 'EOFEXTRACT'
+set -e
+sudo mkdir -p /opt/petrolis
+sudo chown "$USER":"$USER" /opt/petrolis
 cd /opt/petrolis
 tar xzf /tmp/petrolis-deploy.tar.gz
 rm /tmp/petrolis-deploy.tar.gz
@@ -55,8 +90,8 @@ echo "✅ Estrazione completata!"
 echo ""
 echo "🔧 Ricostruzione e riavvio del container..."
 
-# Esegui i comandi sul server
-ssh ${SERVER_USER}@${SERVER_IP} << 'EOF'
+ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" 'bash -s' << 'EOF'
+set -e
 cd /opt/petrolis
 
 echo "🧹 Pulizia file metadata sul server..."
@@ -64,14 +99,14 @@ find . -type f -name '._*' -delete 2>/dev/null || true
 find . -type f -name '.DS_Store' -delete 2>/dev/null || true
 
 echo "⏹️  Fermando il container esistente..."
-docker stop petrolis-container 2>/dev/null || true
-docker rm petrolis-container 2>/dev/null || true
+sudo docker stop petrolis-container 2>/dev/null || true
+sudo docker rm petrolis-container 2>/dev/null || true
 
 echo "🏗️  Ricostruendo l'immagine Docker..."
-docker build -t petrolis-webapp .
+sudo docker build -t petrolis-webapp .
 
 echo "🚀 Avviando il nuovo container..."
-docker run -d \
+sudo docker run -d \
   --name petrolis-container \
   -p 127.0.0.1:3000:3000 \
   --env-file .env.local \
@@ -80,8 +115,8 @@ docker run -d \
 
 echo "✅ Deploy completato!"
 echo "📊 Stato del container:"
-docker ps | grep petrolis-container
+sudo docker ps | grep petrolis-container
 EOF
 
 echo "🎉 Deploy completato con successo!"
-echo "🌐 Il sito sarà disponibile su https://api.petrolis.it"
+echo "🌐 Il sito sarà disponibile su https://${DOMAIN}"
