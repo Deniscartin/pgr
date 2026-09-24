@@ -1,25 +1,74 @@
-import { useState, useEffect } from 'react';
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  query, 
-  where, 
-  orderBy, 
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  doc,
+  query,
+  where,
+  orderBy,
   onSnapshot,
   Timestamp,
-  deleteDoc
+  deleteDoc,
+  documentId,
+  getDocs,
+  limit,
+  startAfter,
+  QueryConstraint,
+  QueryDocumentSnapshot,
+  DocumentData
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Order, Trip, User, InvoiceData, PriceCheck } from '@/lib/types';
 
-// Hook per gestire gli ordini
-export function useOrders() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+const startOfDay = (date: Date) => {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+// Restituisce l'inizio della giornata corrente e si aggiorna da solo a mezzanotte:
+// l'autista può lasciare l'app aperta tutta la notte e il giorno dopo deve vedere
+// la sua nuova giornata, non quella precedente.
+export function useTodayStart() {
+  const [dayStart, setDayStart] = useState(() => startOfDay(new Date()));
 
   useEffect(() => {
+    const nextMidnight = new Date(dayStart);
+    nextMidnight.setDate(nextMidnight.getDate() + 1);
+    const timer = setTimeout(
+      () => setDayStart(startOfDay(new Date())),
+      Math.max(nextMidnight.getTime() - Date.now(), 0)
+    );
+    return () => clearTimeout(timer);
+  }, [dayStart]);
+
+  return dayStart;
+}
+
+const mapTrip = (doc: QueryDocumentSnapshot<DocumentData>) => ({
+  id: doc.id,
+  ...doc.data(),
+  createdAt: doc.data().createdAt?.toDate() || new Date(),
+  updatedAt: doc.data().updatedAt?.toDate() || new Date(),
+  completedAt: doc.data().completedAt?.toDate() || undefined,
+}) as Trip;
+
+// Hook per gestire gli ordini.
+// `subscribe: false` per i componenti che usano solo addOrder/updateOrder e non
+// devono scaricare l'intera collection.
+export function useOrders(options?: { subscribe?: boolean }) {
+  const subscribe = options?.subscribe ?? true;
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(subscribe);
+
+  useEffect(() => {
+    if (!subscribe) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
+
     const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const ordersData = snapshot.docs.map(doc => ({
@@ -33,7 +82,7 @@ export function useOrders() {
     });
 
     return unsubscribe;
-  }, []);
+  }, [subscribe]);
 
   const addOrder = async (orderData: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>) => {
     const docRef = await addDoc(collection(db, 'orders'), {
@@ -58,32 +107,106 @@ export function useOrders() {
   return { orders, loading, addOrder, updateOrder, deleteOrder };
 }
 
-// Hook per gestire i viaggi
-export function useTrips(driverId?: string) {
+// Massimo numero di valori ammessi da Firestore in una clausola `in`
+const IN_QUERY_LIMIT = 30;
+
+// Hook per caricare solo gli ordini collegati ai viaggi visibili, invece
+// dell'intera collection. Resta in realtime perché l'OCR compila l'ordine
+// dopo la creazione del viaggio.
+export function useOrdersByIds(orderIds: string[]) {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Chiave stabile: l'effetto non deve ripartire ad ogni render solo perché
+  // l'array arriva con una nuova identità.
+  const idsKey = useMemo(
+    () => Array.from(new Set(orderIds.filter(Boolean))).sort().join(','),
+    [orderIds]
+  );
+
+  useEffect(() => {
+    const ids = idsKey ? idsKey.split(',') : [];
+
+    if (ids.length === 0) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += IN_QUERY_LIMIT) {
+      chunks.push(ids.slice(i, i + IN_QUERY_LIMIT));
+    }
+
+    const byChunk: Order[][] = chunks.map(() => []);
+    const unsubscribes = chunks.map((chunk, index) =>
+      onSnapshot(
+        query(collection(db, 'orders'), where(documentId(), 'in', chunk)),
+        (snapshot) => {
+          byChunk[index] = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate() || new Date(),
+            updatedAt: doc.data().updatedAt?.toDate() || new Date(),
+          })) as Order[];
+          setOrders(byChunk.flat());
+          setLoading(false);
+        }
+      )
+    );
+
+    return () => unsubscribes.forEach(unsubscribe => unsubscribe());
+  }, [idsKey]);
+
+  return { orders, loading };
+}
+
+// Hook per gestire i viaggi.
+// `todayOnly: true` limita la query ai viaggi creati dalla mezzanotte in poi:
+// serve alla dashboard autista, che non deve scaricare lo storico completo.
+export function useTrips(
+  driverId?: string,
+  options?: { todayOnly?: boolean; requireDriverId?: boolean }
+) {
+  const todayOnly = options?.todayOnly ?? false;
+  const requireDriverId = options?.requireDriverId ?? false;
+  const dayStart = useTodayStart();
+  const dayStartMs = todayOnly ? dayStart.getTime() : 0;
+
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let q = query(collection(db, 'trips'), orderBy('createdAt', 'desc'));
-    
-    if (driverId) {
-      q = query(collection(db, 'trips'), where('driverId', '==', driverId), orderBy('createdAt', 'desc'));
+    // Chi è vincolato a un solo autista (la dashboard autista) non deve
+    // interrogare nulla finché il profilo non è caricato: senza `driverId`
+    // la query partirebbe senza filtro e mostrerebbe i viaggi di tutti.
+    if (requireDriverId && !driverId) {
+      setTrips([]);
+      setLoading(true);
+      return;
     }
 
+    const constraints: QueryConstraint[] = [];
+
+    if (driverId) {
+      constraints.push(where('driverId', '==', driverId));
+    }
+    if (todayOnly) {
+      constraints.push(where('createdAt', '>=', Timestamp.fromMillis(dayStartMs)));
+    }
+    constraints.push(orderBy('createdAt', 'desc'));
+
+    const q = query(collection(db, 'trips'), ...constraints);
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const tripsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate() || new Date(),
-        updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-        completedAt: doc.data().completedAt?.toDate() || undefined,
-      })) as Trip[];
-      setTrips(tripsData);
+      setTrips(snapshot.docs.map(mapTrip));
       setLoading(false);
     });
 
     return unsubscribe;
-  }, [driverId]);
+  }, [driverId, todayOnly, dayStartMs, requireDriverId]);
 
   const addTrip = async (tripData: Omit<Trip, 'id' | 'createdAt' | 'updatedAt'>) => {
     const docRef = await addDoc(collection(db, 'trips'), {
@@ -123,6 +246,68 @@ export function useTrips(driverId?: string) {
   };
 
   return { trips, loading, addTrip, updateTrip, completeTrip, deleteTrip };
+}
+
+const PAST_TRIPS_PAGE_SIZE = 20;
+
+// Hook per lo storico viaggi dell'autista: caricato solo su richiesta
+// (`enabled`), a pagine e senza listener realtime — sono viaggi già chiusi.
+export function usePastTrips(driverId: string | undefined, enabled: boolean) {
+  const dayStart = useTodayStart();
+  const dayStartMs = dayStart.getTime();
+
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const cursorRef = useRef<QueryDocumentSnapshot<DocumentData> | null>(null);
+
+  const fetchPage = useCallback(async (append: boolean) => {
+    if (!driverId) return;
+
+    setLoading(true);
+    try {
+      const constraints: QueryConstraint[] = [
+        where('driverId', '==', driverId),
+        where('status', '==', 'completato'),
+        where('createdAt', '<', Timestamp.fromMillis(dayStartMs)),
+        orderBy('createdAt', 'desc'),
+      ];
+
+      if (append && cursorRef.current) {
+        constraints.push(startAfter(cursorRef.current));
+      }
+      constraints.push(limit(PAST_TRIPS_PAGE_SIZE));
+
+      const snapshot = await getDocs(query(collection(db, 'trips'), ...constraints));
+      const page = snapshot.docs.map(mapTrip);
+
+      cursorRef.current = snapshot.docs[snapshot.docs.length - 1] ?? null;
+      setHasMore(snapshot.docs.length === PAST_TRIPS_PAGE_SIZE);
+      setTrips(prev => (append ? [...prev, ...page] : page));
+    } catch (error) {
+      console.error('Error loading past trips:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [driverId, dayStartMs]);
+
+  useEffect(() => {
+    if (!enabled || !driverId) return;
+
+    // Riapertura dello storico: si riparte sempre dalla prima pagina, così i
+    // dati sono freschi anche senza listener.
+    cursorRef.current = null;
+    setTrips([]);
+    setHasMore(false);
+    fetchPage(false);
+  }, [enabled, driverId, fetchPage]);
+
+  const loadMore = useCallback(() => {
+    if (loading || !hasMore) return;
+    fetchPage(true);
+  }, [loading, hasMore, fetchPage]);
+
+  return { trips, loading, hasMore, loadMore };
 }
 
 // Hook per gestire gli utenti autisti

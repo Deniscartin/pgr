@@ -15,11 +15,14 @@ import ImageViewerModal from './ImageViewerModal';
 interface PastTripsModalProps {
   trips: Trip[];
   orders: Order[];
+  loading: boolean;
+  hasMore: boolean;
+  onLoadMore: () => void;
   isOpen: boolean;
   onClose: () => void;
 }
 
-export default function PastTripsModal({ trips, orders, isOpen, onClose }: PastTripsModalProps) {
+export default function PastTripsModal({ trips, orders, loading, hasMore, onLoadMore, isOpen, onClose }: PastTripsModalProps) {
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [expandedTrips, setExpandedTrips] = useState<Set<string>>(new Set());
@@ -57,7 +60,7 @@ export default function PastTripsModal({ trips, orders, isOpen, onClose }: PastT
           {/* Header */}
           <div className="flex justify-between items-center p-4 sm:p-6 border-b">
             <h2 className="text-xl font-bold text-gray-900">
-              Viaggi Passati ({trips.length})
+              Viaggi Passati
             </h2>
             <button
               onClick={onClose}
@@ -69,7 +72,11 @@ export default function PastTripsModal({ trips, orders, isOpen, onClose }: PastT
 
           {/* Content */}
           <div className="overflow-y-auto max-h-[calc(90vh-120px)]">
-            {sortedTrips.length === 0 ? (
+            {sortedTrips.length === 0 && loading ? (
+              <div className="flex justify-center py-12">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div>
+              </div>
+            ) : sortedTrips.length === 0 ? (
               <div className="text-center py-12">
                 <CheckCircle className="mx-auto h-12 w-12 text-gray-400" />
                 <h3 className="mt-2 text-sm font-medium text-gray-900">Nessun viaggio completato</h3>
@@ -230,6 +237,18 @@ export default function PastTripsModal({ trips, orders, isOpen, onClose }: PastT
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {sortedTrips.length > 0 && hasMore && (
+              <div className="p-4 sm:p-6 border-t border-gray-100">
+                <button
+                  onClick={onLoadMore}
+                  disabled={loading}
+                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl font-medium text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {loading ? 'Caricamento...' : 'Carica altri viaggi'}
+                </button>
               </div>
             )}
           </div>

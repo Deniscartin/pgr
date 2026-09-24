@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useTrips, useOrders } from '@/hooks/useFirestore';
+import { useTrips, useOrders, useOrdersByIds, usePastTrips } from '@/hooks/useFirestore';
 import { Trip, Order } from '@/lib/types';
 import { 
   LogOut, 
@@ -26,9 +26,13 @@ import QRScannerModal from './QRScannerModal';
 
 export default function DriverDashboard() {
   const { userProfile, logout } = useAuth();
-  const { trips, loading: tripsLoading, addTrip, updateTrip, completeTrip } = useTrips(userProfile?.id);
-  const { orders, loading: ordersLoading, addOrder } = useOrders();
-  
+  // Solo i viaggi di oggi: lo storico si carica su richiesta da "Viaggi Passati".
+  const { trips, loading: tripsLoading, addTrip, updateTrip, completeTrip } = useTrips(
+    userProfile?.id,
+    { todayOnly: true, requireDriverId: true }
+  );
+  const { addOrder } = useOrders({ subscribe: false });
+
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [showCreateTripModal, setShowCreateTripModal] = useState(false);
@@ -38,6 +42,20 @@ export default function DriverDashboard() {
   const [showQRCode, setShowQRCode] = useState(false);
 
   const [selectedTripForAction, setSelectedTripForAction] = useState<Trip | null>(null);
+
+  const {
+    trips: pastTrips,
+    loading: pastTripsLoading,
+    hasMore: hasMorePastTrips,
+    loadMore: loadMorePastTrips,
+  } = usePastTrips(userProfile?.id, showPastTrips);
+
+  // Gli ordini vengono letti solo per i viaggi effettivamente a schermo.
+  const visibleOrderIds = useMemo(
+    () => [...trips, ...pastTrips].map(trip => trip.orderId),
+    [trips, pastTrips]
+  );
+  const { orders } = useOrdersByIds(visibleOrderIds);
 
   const handleCreateTripFromImages = async (imageUrls: {
     edasImageUrl: string;
@@ -105,34 +123,10 @@ export default function DriverDashboard() {
     }
   };
 
-  // Filter trips by today and past
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  const todayTrips = trips.filter(trip => {
-    try {
-      // Handle Firestore Timestamp and Date objects
-      const tripDate = trip.createdAt instanceof Date ? trip.createdAt : new Date(trip.createdAt);
-      tripDate.setHours(0, 0, 0, 0);
-      return tripDate.getTime() === today.getTime();
-    } catch {
-      return false;
-    }
-  });
-
-  const pastTrips = trips.filter(trip => {
-    try {
-      const tripDate = trip.createdAt instanceof Date ? trip.createdAt : new Date(trip.createdAt);
-      tripDate.setHours(0, 0, 0, 0);
-      return tripDate.getTime() < today.getTime() && trip.status === 'completato';
-    } catch {
-      return false;
-    }
-  });
-
-  const assignedTrips = todayTrips.filter(trip => trip.status === 'assegnato' || trip.status === 'in_corso');
-  const completedTrips = todayTrips.filter(trip => trip.status === 'completato');
-  const processingTrips = todayTrips.filter(trip => trip.status === 'elaborazione');
+  // `trips` contiene già solo la giornata corrente (filtro lato query).
+  const assignedTrips = trips.filter(trip => trip.status === 'assegnato' || trip.status === 'in_corso');
+  const completedTrips = trips.filter(trip => trip.status === 'completato');
+  const processingTrips = trips.filter(trip => trip.status === 'elaborazione');
 
   const handleViewImages = (trip: Trip) => {
     setSelectedTripForAction(trip);
@@ -166,7 +160,9 @@ export default function DriverDashboard() {
     }
   };
 
-  if (tripsLoading || ordersLoading) {
+  // Gli ordini si risolvono dopo i viaggi: non devono bloccare la dashboard,
+  // altrimenti l'apertura dello storico farebbe ricomparire lo spinner.
+  if (tripsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-500"></div>
@@ -230,7 +226,7 @@ export default function DriverDashboard() {
           >
             <div className="flex items-center min-w-0">
               <History className="w-4 h-4 mr-2 text-gray-500 flex-shrink-0" />
-              <span className="truncate">Viaggi Passati ({pastTrips.length})</span>
+              <span className="truncate">Viaggi Passati</span>
             </div>
             <Eye className="w-4 h-4 text-gray-500 flex-shrink-0" />
           </button>
@@ -426,7 +422,7 @@ export default function DriverDashboard() {
         {trips.length === 0 && (
           <div className="text-center py-12">
             <Truck className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">Nessun viaggio trovato</h3>
+            <h3 className="mt-2 text-sm font-medium text-gray-900">Nessun viaggio oggi</h3>
             <p className="mt-1 text-sm text-gray-500">
               Avvia un nuovo viaggio scattando le foto dei documenti.
             </p>
@@ -472,6 +468,9 @@ export default function DriverDashboard() {
         <PastTripsModal
           trips={pastTrips}
           orders={orders}
+          loading={pastTripsLoading}
+          hasMore={hasMorePastTrips}
+          onLoadMore={loadMorePastTrips}
           isOpen={showPastTrips}
           onClose={() => setShowPastTrips(false)}
         />

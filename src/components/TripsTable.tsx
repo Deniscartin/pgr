@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Trip, Order, User } from '@/lib/types';
 import { Search, ChevronLeft, ChevronRight, Filter, Calendar, User as UserIcon, FileText, Trash2, Truck } from 'lucide-react';
 import { getDisplayCompanyName } from '@/lib/companyUtils';
+import { parseDocumentDate } from '@/lib/dateUtils';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
@@ -134,17 +135,17 @@ export default function TripsTable({ trips, orders, drivers, onViewDetails, onDe
       });
     }
 
-    // Date range filter
+    // Date range filter: si filtra sulla data di carico mostrata in tabella
+    // (colonna "Data"), non sulla data di creazione del record.
     if (dateFromFilter || dateToFilter) {
       filtered = filtered.filter(trip => {
-        const tripDate = trip.createdAt ? (trip.createdAt instanceof Date ? trip.createdAt : new Date(trip.createdAt as any)) : null;
-        if (!tripDate) return false;
-        
-        const tripDateString = tripDate.toISOString().split('T')[0];
-        
+        const tripDateString = parseDocumentDate(trip.loadingNoteData?.loadingDate);
+        // Data assente o illeggibile: fuori da qualsiasi intervallo.
+        if (!tripDateString) return false;
+
         if (dateFromFilter && tripDateString < dateFromFilter) return false;
         if (dateToFilter && tripDateString > dateToFilter) return false;
-        
+
         return true;
       });
     }
