@@ -2,7 +2,7 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   output: 'standalone',
-  serverExternalPackages: ['@react-pdf/renderer', '@google-cloud/documentai', 'google-gax', 'google-auth-library'],
+  serverExternalPackages: ['@react-pdf/renderer', '@google-cloud/documentai', 'google-gax', 'google-auth-library', 'firebase-admin'],
   webpack: (config) => {
     // Exclude the Expo mobile app directory from Next.js build
     config.module.rules.push({

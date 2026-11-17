@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// Accesso solo a utenti autenticati che hanno un profilo in users/{uid}.
+// Solo gli admin possono creare/modificare profili (ruoli). Un utente può
+// aggiornare del proprio profilo solo qrCode/updatedAt.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function profilePath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function hasProfile() {
+      return signedIn() && exists(profilePath())
+        && get(profilePath()).data.get('role', '') in ['admin', 'operatore', 'autista', 'gestore_fatture'];
+    }
+    function isAdmin() { return hasProfile() && get(profilePath()).data.role == 'admin'; }
+
+    match /users/{uid} {
+      allow read: if hasProfile() || (signedIn() && request.auth.uid == uid);
+      allow create, update, delete: if isAdmin();
+      // Gli operatori possono creare solo autisti.
+      allow create: if hasProfile() && get(profilePath()).data.role == 'operatore'
+        && request.resource.data.role == 'autista';
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qrCode', 'updatedAt']);
+    }
+
+    match /orders/{doc=**}                 { allow read, write: if hasProfile(); }
+    match /trips/{doc=**}                  { allow read, write: if hasProfile(); }
+    match /invoices/{doc=**}               { allow read, write: if hasProfile(); }
+    match /priceChecks/{doc=**}            { allow read, write: if hasProfile(); }
+    match /excel_generated_data/{doc=**}   { allow read, write: if hasProfile(); }
+    match /excel_generator_config/{doc=**} { allow read, write: if hasProfile(); }
+    match /settings/{doc=**} {
+      allow read: if hasProfile();
+      allow write: if isAdmin();
+    }
+    // Tutto il resto (es. RANSOM_NOTE) è chiuso.
+  }
+}

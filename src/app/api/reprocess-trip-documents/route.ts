@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { doc, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { Timestamp } from 'firebase-admin/firestore';
+import { adminDb, authorize } from '@/lib/firebaseAdmin';
 import { ParsedEDASData, ParsedLoadingNoteData, ValidationResult } from '@/lib/types';
 import { parseLoadingNote, parseEdas } from '@/lib/documentParsers';
 
 export async function POST(request: NextRequest) {
+  const denied = await authorize(request);
+  if (denied) return denied;
+
   try {
     const { tripId } = await request.json();
 
@@ -18,17 +21,17 @@ export async function POST(request: NextRequest) {
     console.log(`Inizio ri-processamento documenti per trip ${tripId}`);
 
     // Ottieni il trip esistente
-    const tripRef = doc(db, 'trips', tripId);
-    const tripDoc = await getDoc(tripRef);
+    const tripRef = adminDb().collection('trips').doc(tripId);
+    const tripDoc = await tripRef.get();
     
-    if (!tripDoc.exists()) {
+    if (!tripDoc.exists) {
       return NextResponse.json(
         { error: 'Viaggio non trovato' },
         { status: 404 }
       );
     }
 
-    const tripData = tripDoc.data();
+    const tripData = tripDoc.data()!;
     const edasImageUrl = tripData.edasImageUrl;
     const loadingNoteImageUrl = tripData.loadingNoteImageUrl;
 
@@ -159,7 +162,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Aggiorna il documento nel database
-    await updateDoc(tripRef, updates);
+    await tripRef.update(updates);
 
     console.log(`✅ Ri-processamento completato per trip ${tripId}`);
 

@@ -6,10 +6,12 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword,
+  getAuth,
 } from 'firebase/auth';
+import { initializeApp, getApps } from 'firebase/app';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import app, { auth, db } from '@/lib/firebase';
 import { User, UserRole } from '@/lib/types';
 
 interface AuthContextType {
@@ -96,14 +98,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await setDoc(doc(db, 'users', user.uid), userData);
   };
 
-  // Funzione per creare utenti come admin senza perdere la sessione corrente
+  // Crea utenti come admin senza perdere la sessione corrente: l'account viene creato
+  // su un'istanza Firebase secondaria, il profilo viene scritto con la sessione dell'admin
+  // (le regole Firestore permettono solo agli admin di creare profili).
   const createUserAsAdmin = async (email: string, password: string, name: string, role: UserRole, carriers?: string[]) => {
-    // Salva l'utente attualmente autenticato
-    const currentAuthUser = auth.currentUser;
-    
-    // Crea il nuovo utente
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const secondaryApp = getApps().find((a) => a.name === 'userCreation') ?? initializeApp(app.options, 'userCreation');
+    const secondaryAuth = getAuth(secondaryApp);
+
+    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
     const newUser = userCredential.user;
+    await signOut(secondaryAuth);
 
     // Create user profile in Firestore
     const userData: any = {
@@ -119,15 +123,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     
     await setDoc(doc(db, 'users', newUser.uid), userData);
-
-    // Fai logout del nuovo utente e riautentica l'admin
-    await signOut(auth);
-    
-    if (currentAuthUser && userProfile) {
-      // Re-autentica l'admin - qui dovrai passare la password dell'admin
-      // Per ora facciamo un reload della pagina per ripristinare la sessione dell'admin
-      window.location.reload();
-    }
   };
 
   const refreshUserProfile = async () => {

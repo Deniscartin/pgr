@@ -5,6 +5,7 @@ import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { RefreshCw, Upload, Camera } from 'lucide-react';
 import { uploadImageToCloud } from '@/lib/imageProcessing';
+import { authFetch } from '@/lib/authFetch';
 
 interface ImageViewerModalProps {
   trip: Trip;
@@ -139,7 +140,7 @@ export default function ImageViewerModal({ trip, isOpen, onClose }: ImageViewerM
       console.log('✅ Immagini riassegnate, avvio riprocessamento...');
 
       // Trigger reprocessing
-      const response = await fetch('/api/reprocess-trip-documents', {
+      const response = await authFetch('/api/reprocess-trip-documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tripId: trip.id }),

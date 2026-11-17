@@ -54,3 +54,9 @@ next-env.d.ts
 *tidal-glider*.json
 *.service-account.json
 
+
+# restore utenti / credenziali admin
+scripts/auth-users-backup-*.json
+scripts/users-roles.json
+*service-account*.json
+*-firebase-adminsdk-*.json

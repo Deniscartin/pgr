@@ -5,6 +5,7 @@ import { collection, query, where, getDocs, doc, updateDoc, Timestamp } from 'fi
 import { db } from '@/lib/firebase';
 import { Trip } from '@/lib/types';
 import { RefreshCw, AlertCircle } from 'lucide-react';
+import { authFetch } from '@/lib/authFetch';
 
 type DocumentType = 'edas' | 'loadingNote' | 'cartelloCounter';
 
@@ -157,7 +158,7 @@ export default function FixTripsPage() {
       console.log(`✅ Trip ${tripId} - Immagini riassegnate, avvio riprocessamento...`);
       
       // Trigger reprocessing
-      const response = await fetch('/api/reprocess-trip-documents', {
+      const response = await authFetch('/api/reprocess-trip-documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tripId }),

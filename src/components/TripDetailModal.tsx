@@ -6,6 +6,7 @@ import { useDrivers } from '@/hooks/useFirestore';
 import { useAuth } from '@/contexts/AuthContext';
 import { getDisplayCompanyName } from '@/lib/companyUtils';
 import { X, Image as ImageIcon, AlertTriangle, CheckCircle, Edit3, Save, AlertCircle, FileText, Truck, Package, MapPin, Download, RefreshCw, Scan } from 'lucide-react';
+import { authFetch } from '@/lib/authFetch';
 
 interface TripDetailModalProps {
   isOpen: boolean;
@@ -198,7 +199,7 @@ export default function TripDetailModal({ isOpen, onClose, trip, order, onViewIm
     setReprocessingMessage('Riprocessamento documenti in corso...');
     
     try {
-      const response = await fetch('/api/reprocess-trip-documents', {
+      const response = await authFetch('/api/reprocess-trip-documents', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

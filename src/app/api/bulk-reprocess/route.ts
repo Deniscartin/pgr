@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { collection, query, where, getDocs, doc, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { Timestamp } from 'firebase-admin/firestore';
+import { adminDb, authorize } from '@/lib/firebaseAdmin';
 import { ParsedEDASData, ParsedLoadingNoteData, ValidationResult } from '@/lib/types';
 import { parseLoadingNote, parseEdas } from '@/lib/documentParsers';
 
@@ -127,13 +127,16 @@ async function reprocessSingleTrip(tripId: string, tripData: any): Promise<{ suc
   }
 
   // Aggiorna il documento nel database
-  const tripRef = doc(db, 'trips', tripId);
-  await updateDoc(tripRef, updates);
+  const tripRef = adminDb().collection('trips').doc(tripId);
+  await tripRef.update(updates);
 
   return { success: true };
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await authorize(request, ['admin']);
+  if (denied) return denied;
+
   try {
     const { startDate, endDate } = await request.json();
 
@@ -151,14 +154,11 @@ export async function POST(request: NextRequest) {
     const end = new Date(`${endDate}T23:59:59`);
 
     // Query trips in date range
-    const tripsRef = collection(db, 'trips');
-    const q = query(
-      tripsRef,
-      where('createdAt', '>=', Timestamp.fromDate(start)),
-      where('createdAt', '<=', Timestamp.fromDate(end))
-    );
-
-    const querySnapshot = await getDocs(q);
+    const querySnapshot = await adminDb()
+      .collection('trips')
+      .where('createdAt', '>=', Timestamp.fromDate(start))
+      .where('createdAt', '<=', Timestamp.fromDate(end))
+      .get();
     const totalTrips = querySnapshot.size;
 
     console.log(`📊 Trovati ${totalTrips} viaggi nel periodo`);
@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
     // Process trips sequentially to avoid overloading Google Document AI
     for (const tripDoc of querySnapshot.docs) {
       const tripId = tripDoc.id;
-      const tripData = tripDoc.data();
+      const tripData = tripDoc.data()!;
       const driverName = tripData.driverName || 'N/A';
       const dasNumber = tripData.edasData?.documentInfo?.dasNumber || tripData.loadingNoteData?.documentNumber || 'N/A';
 

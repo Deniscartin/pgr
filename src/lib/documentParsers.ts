@@ -5,8 +5,22 @@ import fs from 'fs';
 
 // Load service account credentials directly as object (works reliably in Docker standalone)
 function loadCredentials(): { client_email: string; private_key: string } | null {
-  // Try multiple possible paths for the credentials file
+  // 1. Variabile d'ambiente (contenuto JSON su una riga). È il modo consigliato:
+  //    i file in public/ vengono serviti pubblicamente da Next.js.
+  const fromEnv = process.env.DOCUMENT_AI_CREDENTIALS;
+  if (fromEnv) {
+    try {
+      const parsed = JSON.parse(fromEnv);
+      console.log('✅ Credenziali Document AI caricate da DOCUMENT_AI_CREDENTIALS');
+      return parsed;
+    } catch (e) {
+      console.warn('⚠️ DOCUMENT_AI_CREDENTIALS non è un JSON valido:', e);
+    }
+  }
+
+  // 2. File locale (sviluppo)
   const possiblePaths = [
+    path.join(process.cwd(), 'tidal-glider-465915-e6-bd6629717062.json'),
     path.join(process.cwd(), 'public', 'tidal-glider-465915-e6-bd6629717062.json'),
     path.join(process.cwd(), '..', 'public', 'tidal-glider-465915-e6-bd6629717062.json'),
     '/app/public/tidal-glider-465915-e6-bd6629717062.json',

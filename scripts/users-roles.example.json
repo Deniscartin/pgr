@@ -1,0 +1,6 @@
+{
+  "admin@esempio.it": { "role": "admin", "name": "Nome Admin" },
+  "operatore@esempio.it": { "role": "operatore", "name": "Mario Rossi", "carriers": ["MEROLLI"] },
+  "fatture@esempio.it": { "role": "gestore_fatture", "name": "Ufficio Fatture" },
+  "autista@esempio.it": { "role": "autista", "name": "Luigi Bianchi", "carriers": ["MEROLLI"] }
+}

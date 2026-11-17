@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { Timestamp } from 'firebase-admin/firestore';
+import { adminDb, authorize } from '@/lib/firebaseAdmin';
 
 const defaultBases = [
   { code: 'LT', name: 'Latina', fullName: '' },
@@ -10,12 +10,15 @@ const defaultBases = [
   { code: 'FR', name: 'Frosinone', fullName: '' },
 ];
 
-export async function POST() {
+export async function POST(request: Request) {
+  const denied = await authorize(request, ['admin']);
+  if (denied) return denied;
+
   try {
     console.log('🔧 Inizializzazione basi di carico...');
     
-    const docRef = doc(db, 'settings', 'loadingBases');
-    await setDoc(docRef, { bases: defaultBases });
+    const docRef = adminDb().collection('settings').doc('loadingBases');
+    await docRef.set({ bases: defaultBases });
     
     console.log('✅ Basi di carico inizializzate con successo!');
     

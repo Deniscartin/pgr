@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { RefreshCw, CheckCircle, XCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { authFetch } from '@/lib/authFetch';
 
 interface ReprocessResult {
   tripId: string;
@@ -46,7 +47,7 @@ export default function BulkReprocessPage() {
     setProgress('Invio richiesta di riprocessamento...');
 
     try {
-      const res = await fetch('/api/bulk-reprocess', {
+      const res = await authFetch('/api/bulk-reprocess', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ startDate, endDate }),

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { doc, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { Timestamp } from 'firebase-admin/firestore';
+import { adminDb, authorize } from '@/lib/firebaseAdmin';
 import { ParsedEDASData, ParsedLoadingNoteData, ValidationResult } from '@/lib/types';
 import { parseLoadingNote, parseEdas } from '@/lib/documentParsers';
 
@@ -54,6 +54,9 @@ async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await authorize(request);
+  if (denied) return denied;
+
   try {
     const { tripId, orderId, driverId, edasImageUrl, loadingNoteImageUrl, cartelloCounterImageUrl } = await request.json();
 
@@ -65,10 +68,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const tripRef = doc(db, 'trips', tripId);
-    const tripDoc = await getDoc(tripRef);
+    const tripRef = adminDb().collection('trips').doc(tripId);
+    const tripDoc = await tripRef.get();
     
-    if (!tripDoc.exists() || tripDoc.data().status !== 'elaborazione') {
+    if (!tripDoc.exists || tripDoc.data()!.status !== 'elaborazione') {
       return NextResponse.json(
         { error: 'Viaggio non trovato o non in stato di elaborazione' },
         { status: 400 }
@@ -168,7 +171,7 @@ export async function POST(request: NextRequest) {
     // Step 4: Update Order with extracted data
     console.log('💾 Step 4: Updating order with extracted data...');
     try {
-      const orderRef = doc(db, 'orders', tripDoc.data().orderId);
+      const orderRef = adminDb().collection('orders').doc(tripDoc.data()!.orderId);
       const orderUpdateData: any = {
         updatedAt: Timestamp.now()
       };
@@ -199,7 +202,7 @@ export async function POST(request: NextRequest) {
 
       orderUpdateData.notes = `Ordine aggiornato da documenti processati con Google Document AI`;
       
-      await updateDoc(orderRef, orderUpdateData);
+      await orderRef.update(orderUpdateData);
       console.log('✅ Order updated successfully');
     } catch (error) {
       console.error('❌ Error updating order:', error);
@@ -238,7 +241,7 @@ export async function POST(request: NextRequest) {
       updateData.validationResults = validationResults;
     }
 
-    await updateDoc(tripRef, updateData);
+    await tripRef.update(updateData);
 
     console.log(`🎉 Processamento completato per trip ${tripId} con Google Document AI`);
     console.log(`  - e-DAS processed: ${!!edasData}`);

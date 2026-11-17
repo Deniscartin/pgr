@@ -21,6 +21,7 @@ import CreateTripModal from './CreateTripModal';
 import ImageViewerModal from './ImageViewerModal';
 import DriverQRCode from './DriverQRCode';
 import QRScannerModal from './QRScannerModal';
+import { authFetch } from '@/lib/authFetch';
 
 export default function DriverDashboard() {
   const { userProfile, logout } = useAuth();
@@ -90,7 +91,7 @@ export default function DriverDashboard() {
       const addedTrip = await addTrip(newTripData);
 
       // 3. Immediately trigger background processing via API route
-      fetch('/api/process-trip-documents', {
+      authFetch('/api/process-trip-documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

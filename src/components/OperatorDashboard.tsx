@@ -26,6 +26,7 @@ import TripDetailModal from './TripDetailModal';
 import ArchiveModal from './ArchiveModal';
 import ImageViewerModal from './ImageViewerModal';
 import { getDisplayCompanyName } from '@/lib/companyUtils';
+import { authFetch } from '@/lib/authFetch';
 
 export default function OperatorDashboard() {
   const { userProfile, logout } = useAuth();
@@ -158,7 +159,7 @@ export default function OperatorDashboard() {
       const addedTrip = await addTrip(newTripData);
 
       // 3. Immediately trigger background processing via API route
-      fetch('/api/process-trip-documents', {
+      authFetch('/api/process-trip-documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
